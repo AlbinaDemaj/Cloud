@@ -8,7 +8,7 @@ use App\Models\Media;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\File;
 use Inertia\Inertia;
 
 class MediaController extends Controller
@@ -70,8 +70,8 @@ class MediaController extends Controller
             'files.*' => [
                 'required',
                 'file',
-                'mimes:jpg,jpeg,png,webp,mp4,mov,avi',
-                'max:20480',
+                'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi',
+                'max:512000',
             ],
         ]);
 
@@ -98,12 +98,21 @@ class MediaController extends Controller
 
         foreach ($request->file('files') as $file) {
             $mime = $file->getMimeType();
-            $type = str_starts_with($mime, 'video') ? 'video' : 'photo';
+            $type = str_starts_with($mime, 'video/') ? 'video' : 'photo';
 
-            $path = $file->store(
-                'media/' . $this->companyId() . '/' . $guest->id,
-                'public'
-            );
+            $directory = 'uploads/media/' . $this->companyId() . '/' . $guest->id;
+            $publicPath = public_path($directory);
+
+            if (!File::exists($publicPath)) {
+                File::makeDirectory($publicPath, 0775, true);
+            }
+
+            $extension = $file->getClientOriginalExtension();
+            $filename = uniqid('', true) . '_' . time() . '.' . $extension;
+
+            $file->move($publicPath, $filename);
+
+            $path = $directory . '/' . $filename;
 
             Media::create([
                 'company_id' => $this->companyId(),
@@ -139,12 +148,12 @@ class MediaController extends Controller
     {
         $this->authorizeMedia($media);
 
-        if ($media->file_path) {
-            Storage::disk('public')->delete($media->file_path);
+        if ($media->file_path && File::exists(public_path($media->file_path))) {
+            File::delete(public_path($media->file_path));
         }
 
-        if ($media->thumbnail_path) {
-            Storage::disk('public')->delete($media->thumbnail_path);
+        if ($media->thumbnail_path && File::exists(public_path($media->thumbnail_path))) {
+            File::delete(public_path($media->thumbnail_path));
         }
 
         $media->delete();
