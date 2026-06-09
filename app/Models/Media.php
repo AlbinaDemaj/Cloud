@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
 
 class Media extends Model
 {
@@ -49,15 +48,15 @@ class Media extends Model
 
     public function getFileUrlAttribute()
     {
-        return $this->buildStorageUrl($this->file_path);
+        return $this->buildPublicUrl($this->file_path);
     }
 
     public function getThumbnailUrlAttribute()
     {
-        return $this->buildStorageUrl($this->thumbnail_path);
+        return $this->buildPublicUrl($this->thumbnail_path);
     }
 
-    private function buildStorageUrl(?string $path): ?string
+    private function buildPublicUrl(?string $path): ?string
     {
         if (!$path) {
             return null;
@@ -69,14 +68,18 @@ class Media extends Model
 
         $path = ltrim($path, '/');
 
+        if (str_starts_with($path, 'public/')) {
+            $path = substr($path, strlen('public/'));
+        }
+
         if (str_starts_with($path, 'storage/')) {
             return asset($path);
         }
 
-        if (str_starts_with($path, 'public/')) {
-            $path = str_replace('public/', '', $path);
+        if (str_starts_with($path, 'uploads/')) {
+            return asset($path);
         }
 
-        return Storage::disk('public')->url($path);
+        return asset('storage/' . $path);
     }
 }
