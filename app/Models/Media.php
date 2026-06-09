@@ -1,0 +1,82 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
+
+class Media extends Model
+{
+    protected $fillable = [
+        'company_id',
+        'folder_id',
+        'guest_id',
+        'file_type',
+        'original_name',
+        'file_path',
+        'thumbnail_path',
+        'file_size',
+        'mime_type',
+        'is_visible',
+        'uploaded_by',
+        'uploaded_at',
+    ];
+
+    protected $casts = [
+        'is_visible' => 'boolean',
+        'uploaded_at' => 'datetime',
+    ];
+
+    protected $appends = [
+        'file_url',
+        'thumbnail_url',
+    ];
+
+    public function company()
+    {
+        return $this->belongsTo(User::class, 'company_id');
+    }
+
+    public function guest()
+    {
+        return $this->belongsTo(User::class, 'guest_id');
+    }
+
+    public function folder()
+    {
+        return $this->belongsTo(Folder::class, 'folder_id');
+    }
+
+    public function getFileUrlAttribute()
+    {
+        return $this->buildStorageUrl($this->file_path);
+    }
+
+    public function getThumbnailUrlAttribute()
+    {
+        return $this->buildStorageUrl($this->thumbnail_path);
+    }
+
+    private function buildStorageUrl(?string $path): ?string
+    {
+        if (!$path) {
+            return null;
+        }
+
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            return $path;
+        }
+
+        $path = ltrim($path, '/');
+
+        if (str_starts_with($path, 'storage/')) {
+            return asset($path);
+        }
+
+        if (str_starts_with($path, 'public/')) {
+            $path = str_replace('public/', '', $path);
+        }
+
+        return Storage::disk('public')->url($path);
+    }
+}

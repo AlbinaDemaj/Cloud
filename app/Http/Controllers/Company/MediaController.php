@@ -1,0 +1,162 @@
+<?php
+
+namespace App\Http\Controllers\Company;
+
+use App\Http\Controllers\Controller;
+use App\Models\Folder;
+use App\Models\Media;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
+use Inertia\Inertia;
+
+class MediaController extends Controller
+{
+    private function companyId(): int
+    {
+        return Auth::id();
+    }
+
+    public function index(Request $request)
+    {
+        $media = Media::query()
+            ->where('company_id', $this->companyId())
+            ->with([
+                'guest:id,name,username,email',
+                'folder:id,name',
+            ])
+            ->when($request->guest_id, function ($query) use ($request) {
+                $query->where('guest_id', $request->guest_id);
+            })
+            ->when($request->folder_id, function ($query) use ($request) {
+                $query->where('folder_id', $request->folder_id);
+            })
+            ->when($request->type, function ($query) use ($request) {
+                $query->where('file_type', $request->type);
+            })
+            ->latest()
+            ->get();
+
+        $guests = User::query()
+            ->where('role', 'guest')
+            ->where('company_id', $this->companyId())
+            ->orderBy('name')
+            ->get(['id', 'name', 'username', 'email']);
+
+        $folders = Folder::query()
+            ->where('company_id', $this->companyId())
+            ->orderBy('name')
+            ->get(['id', 'name', 'guest_id']);
+
+        return Inertia::render('Company/Media/Index', [
+            'media' => $media,
+            'guests' => $guests,
+            'folders' => $folders,
+            'filters' => [
+                'guest_id' => $request->guest_id,
+                'folder_id' => $request->folder_id,
+                'type' => $request->type,
+            ],
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'guest_id' => ['required', 'exists:users,id'],
+            'folder_id' => ['nullable', 'exists:folders,id'],
+            'files' => ['required', 'array'],
+            'files.*' => [
+                'required',
+                'file',
+                'mimes:jpg,jpeg,png,webp,mp4,mov,avi',
+                'max:20480',
+            ],
+        ]);
+
+        $guest = User::query()
+            ->where('id', $validated['guest_id'])
+            ->where('role', 'guest')
+            ->where('company_id', $this->companyId())
+            ->firstOrFail();
+
+        $folderId = null;
+
+        if (!empty($validated['folder_id'])) {
+            $folder = Folder::query()
+                ->where('id', $validated['folder_id'])
+                ->where('company_id', $this->companyId())
+                ->where(function ($query) use ($guest) {
+                    $query->whereNull('guest_id')
+                        ->orWhere('guest_id', $guest->id);
+                })
+                ->firstOrFail();
+
+            $folderId = $folder->id;
+        }
+
+        foreach ($request->file('files') as $file) {
+            $mime = $file->getMimeType();
+            $type = str_starts_with($mime, 'video') ? 'video' : 'photo';
+
+            $path = $file->store(
+                'media/' . $this->companyId() . '/' . $guest->id,
+                'public'
+            );
+
+            Media::create([
+                'company_id' => $this->companyId(),
+                'guest_id' => $guest->id,
+                'folder_id' => $folderId,
+                'file_type' => $type,
+                'original_name' => $file->getClientOriginalName(),
+                'file_path' => $path,
+                'thumbnail_path' => null,
+                'file_size' => $file->getSize(),
+                'mime_type' => $mime,
+                'is_visible' => true,
+                'uploaded_by' => Auth::id(),
+                'uploaded_at' => now(),
+            ]);
+        }
+
+        return back()->with('success', 'Media u uploadua me sukses.');
+    }
+
+    public function toggleVisibility(Media $media)
+    {
+        $this->authorizeMedia($media);
+
+        $media->update([
+            'is_visible' => !$media->is_visible,
+        ]);
+
+        return back()->with('success', 'Visibility u ndryshua me sukses.');
+    }
+
+    public function destroy(Media $media)
+    {
+        $this->authorizeMedia($media);
+
+        if ($media->file_path) {
+            Storage::disk('public')->delete($media->file_path);
+        }
+
+        if ($media->thumbnail_path) {
+            Storage::disk('public')->delete($media->thumbnail_path);
+        }
+
+        $media->delete();
+
+        return back()->with('success', 'Media u fshi me sukses.');
+    }
+
+    private function authorizeMedia(Media $media): void
+    {
+        abort_if(
+            (int) $media->company_id !== (int) $this->companyId(),
+            403
+        );
+    }
+}
