@@ -98,6 +98,9 @@ class MediaController extends Controller
 
         foreach ($request->file('files') as $file) {
             $mime = $file->getMimeType();
+            $fileSize = $file->getSize();
+            $originalName = $file->getClientOriginalName();
+            $extension = $file->getClientOriginalExtension();
             $type = str_starts_with($mime, 'video/') ? 'video' : 'photo';
 
             $directory = 'uploads/media/' . $this->companyId() . '/' . $guest->id;
@@ -107,7 +110,6 @@ class MediaController extends Controller
                 File::makeDirectory($publicPath, 0775, true);
             }
 
-            $extension = $file->getClientOriginalExtension();
             $filename = uniqid('', true) . '_' . time() . '.' . $extension;
 
             $file->move($publicPath, $filename);
@@ -119,10 +121,10 @@ class MediaController extends Controller
                 'guest_id' => $guest->id,
                 'folder_id' => $folderId,
                 'file_type' => $type,
-                'original_name' => $file->getClientOriginalName(),
+                'original_name' => $originalName,
                 'file_path' => $path,
                 'thumbnail_path' => null,
-                'file_size' => $file->getSize(),
+                'file_size' => $fileSize,
                 'mime_type' => $mime,
                 'is_visible' => true,
                 'uploaded_by' => Auth::id(),
