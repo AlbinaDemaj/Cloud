@@ -64,24 +64,33 @@ export default function Index({
     };
 
     const toggleVisibility = (id) => {
-        router.patch(
-            route("company.media.visibility", id),
-            {},
-            {
-                preserveScroll: true,
-            }
-        );
+        router.visit(route("company.media.visibility", { media: id }), {
+            method: "patch",
+            preserveScroll: true,
+        });
     };
 
     const deleteMedia = (id) => {
-        if (confirm("A je e sigurt që dëshiron ta fshish këtë media?")) {
-            router.delete(route("company.media.destroy", id), {
-                preserveScroll: true,
-            });
+        if (!confirm("A je e sigurt që dëshiron ta fshish këtë media?")) {
+            return;
         }
+
+        router.visit(route("company.media.destroy", { media: id }), {
+            method: "delete",
+            preserveScroll: true,
+            preserveState: false,
+        });
     };
 
-    const fileUrl = (item) => item.file_url || `/storage/${item.file_path}`;
+    const fileUrl = (item) => {
+        if (item.file_url) return item.file_url;
+
+        if (item.file_path?.startsWith("uploads/")) {
+            return `/${item.file_path}`;
+        }
+
+        return `/storage/${item.file_path}`;
+    };
 
     return (
         <CompanyLayout title="Media Files">
@@ -207,17 +216,14 @@ export default function Index({
                                 </label>
 
                                 <label className="flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center transition hover:border-[#7B61FF] hover:bg-[#7B61FF]/5">
-                                    <Upload
-                                        size={34}
-                                        className="mb-3 text-[#7B61FF]"
-                                    />
+                                    <Upload size={34} className="mb-3 text-[#7B61FF]" />
 
                                     <span className="text-sm font-bold text-slate-800">
                                         Click to select files
                                     </span>
 
                                     <span className="mt-1 text-xs text-slate-500">
-                                        JPG, PNG, WEBP, MP4, MOV, AVI up to 20MB
+                                        JPG, PNG, WEBP, GIF, MP4, MOV, AVI
                                     </span>
 
                                     <input
@@ -390,9 +396,8 @@ export default function Index({
                                                 </span>
 
                                                 <button
-                                                    onClick={() =>
-                                                        toggleVisibility(item.id)
-                                                    }
+                                                    type="button"
+                                                    onClick={() => toggleVisibility(item.id)}
                                                     className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 hover:bg-slate-200"
                                                 >
                                                     {item.is_visible ? (
@@ -411,6 +416,7 @@ export default function Index({
 
                                             <div className="grid grid-cols-2 gap-2">
                                                 <button
+                                                    type="button"
                                                     onClick={() => setPreview(item)}
                                                     className="rounded-2xl bg-[#7B61FF] px-4 py-3 text-sm font-bold text-white hover:bg-[#6A4DFF]"
                                                 >
@@ -418,6 +424,7 @@ export default function Index({
                                                 </button>
 
                                                 <button
+                                                    type="button"
                                                     onClick={() => deleteMedia(item.id)}
                                                     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-600 hover:bg-rose-100"
                                                 >
@@ -443,6 +450,7 @@ export default function Index({
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm">
                         <div className="relative w-full max-w-5xl rounded-3xl bg-white p-5 shadow-2xl">
                             <button
+                                type="button"
                                 onClick={() => setPreview(null)}
                                 className="absolute right-4 top-4 z-10 rounded-full bg-slate-900 p-2 text-white"
                             >
