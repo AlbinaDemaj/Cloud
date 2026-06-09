@@ -34,7 +34,11 @@ export default function Index({
 
     const filteredFolders = folders.filter((folder) => {
         if (!uploadForm.data.guest_id) return true;
-        return Number(folder.guest_id) === Number(uploadForm.data.guest_id);
+
+        return (
+            folder.guest_id === null ||
+            Number(folder.guest_id) === Number(uploadForm.data.guest_id)
+        );
     });
 
     const applyFilters = (e) => {
@@ -64,8 +68,7 @@ export default function Index({
     };
 
     const toggleVisibility = (id) => {
-        router.visit(route("company.media.visibility", { media: id }), {
-            method: "patch",
+        router.patch(route("company.media.visibility", { media: id }), {}, {
             preserveScroll: true,
         });
     };
@@ -75,8 +78,7 @@ export default function Index({
             return;
         }
 
-        router.visit(route("company.media.destroy", { media: id }), {
-            method: "delete",
+        router.post(route("company.media.destroy.post", { media: id }), {}, {
             preserveScroll: true,
             preserveState: false,
         });
@@ -85,7 +87,17 @@ export default function Index({
     const fileUrl = (item) => {
         if (item.file_url) return item.file_url;
 
-        if (item.file_path?.startsWith("uploads/")) {
+        if (!item.file_path) return "";
+
+        if (item.file_path.startsWith("http://") || item.file_path.startsWith("https://")) {
+            return item.file_path;
+        }
+
+        if (item.file_path.startsWith("uploads/")) {
+            return `/${item.file_path}`;
+        }
+
+        if (item.file_path.startsWith("storage/")) {
             return `/${item.file_path}`;
         }
 
@@ -170,8 +182,8 @@ export default function Index({
                                     <option value="">Choose guest</option>
                                     {guests.map((guest) => (
                                         <option key={guest.id} value={guest.id}>
-                                            {guest.name}{" "}
-                                            {guest.username ? `(${guest.username})` : ""}
+                                            {guest.name}
+                                            {guest.username ? ` (${guest.username})` : ""}
                                         </option>
                                     ))}
                                 </select>
@@ -234,7 +246,7 @@ export default function Index({
                                         onChange={(e) =>
                                             uploadForm.setData(
                                                 "files",
-                                                Array.from(e.target.files)
+                                                Array.from(e.target.files || [])
                                             )
                                         }
                                     />

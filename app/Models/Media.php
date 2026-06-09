@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Media extends Model
 {
@@ -22,6 +23,10 @@ class Media extends Model
     ];
 
     protected $casts = [
+        'company_id' => 'integer',
+        'folder_id' => 'integer',
+        'guest_id' => 'integer',
+        'file_size' => 'integer',
         'is_visible' => 'boolean',
         'uploaded_at' => 'datetime',
     ];
@@ -31,36 +36,38 @@ class Media extends Model
         'thumbnail_url',
     ];
 
-    public function company()
+    public function company(): BelongsTo
     {
         return $this->belongsTo(User::class, 'company_id');
     }
 
-    public function guest()
+    public function guest(): BelongsTo
     {
         return $this->belongsTo(User::class, 'guest_id');
     }
 
-    public function folder()
+    public function folder(): BelongsTo
     {
         return $this->belongsTo(Folder::class, 'folder_id');
     }
 
-    public function getFileUrlAttribute()
+    public function getFileUrlAttribute(): ?string
     {
         return $this->buildPublicUrl($this->file_path);
     }
 
-    public function getThumbnailUrlAttribute()
+    public function getThumbnailUrlAttribute(): ?string
     {
         return $this->buildPublicUrl($this->thumbnail_path);
     }
 
     private function buildPublicUrl(?string $path): ?string
     {
-        if (!$path) {
+        if (empty($path)) {
             return null;
         }
+
+        $path = trim($path);
 
         if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
             return $path;

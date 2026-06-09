@@ -15,7 +15,7 @@ class MediaController extends Controller
 {
     private function companyId(): int
     {
-        return Auth::id();
+        return (int) Auth::id();
     }
 
     public function index(Request $request)
@@ -26,15 +26,15 @@ class MediaController extends Controller
                 'guest:id,name,username,email',
                 'folder:id,name',
             ])
-            ->when($request->guest_id, function ($query) use ($request) {
-                $query->where('guest_id', $request->guest_id);
-            })
-            ->when($request->folder_id, function ($query) use ($request) {
-                $query->where('folder_id', $request->folder_id);
-            })
-            ->when($request->type, function ($query) use ($request) {
-                $query->where('file_type', $request->type);
-            })
+            ->when($request->filled('guest_id'), fn ($query) =>
+                $query->where('guest_id', $request->guest_id)
+            )
+            ->when($request->filled('folder_id'), fn ($query) =>
+                $query->where('folder_id', $request->folder_id)
+            )
+            ->when($request->filled('type'), fn ($query) =>
+                $query->where('file_type', $request->type)
+            )
             ->latest()
             ->get();
 
@@ -96,7 +96,7 @@ class MediaController extends Controller
             $folderId = $folder->id;
         }
 
-        foreach ($request->file('files') as $file) {
+        foreach ($request->file('files', []) as $file) {
             $mime = $file->getMimeType();
             $fileSize = $file->getSize();
             $originalName = $file->getClientOriginalName();
@@ -114,15 +114,13 @@ class MediaController extends Controller
 
             $file->move($publicPath, $filename);
 
-            $path = $directory . '/' . $filename;
-
             Media::create([
                 'company_id' => $this->companyId(),
                 'guest_id' => $guest->id,
                 'folder_id' => $folderId,
                 'file_type' => $type,
                 'original_name' => $originalName,
-                'file_path' => $path,
+                'file_path' => $directory . '/' . $filename,
                 'thumbnail_path' => null,
                 'file_size' => $fileSize,
                 'mime_type' => $mime,
@@ -140,13 +138,23 @@ class MediaController extends Controller
         $this->authorizeMedia($media);
 
         $media->update([
-            'is_visible' => !$media->is_visible,
+            'is_visible' => ! $media->is_visible,
         ]);
 
         return back()->with('success', 'Visibility u ndryshua me sukses.');
     }
 
     public function destroy(Media $media)
+    {
+        return $this->deleteMedia($media);
+    }
+
+    public function destroyByPost(Media $media)
+    {
+        return $this->deleteMedia($media);
+    }
+
+    private function deleteMedia(Media $media)
     {
         $this->authorizeMedia($media);
 
@@ -166,7 +174,7 @@ class MediaController extends Controller
     private function authorizeMedia(Media $media): void
     {
         abort_if(
-            (int) $media->company_id !== (int) $this->companyId(),
+            (int) $media->company_id !== $this->companyId(),
             403
         );
     }

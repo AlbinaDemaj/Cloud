@@ -73,6 +73,9 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('/media/{media}', [MediaController::class, 'destroy'])
                 ->name('media.destroy');
 
+            Route::post('/media/{media}/delete', [MediaController::class, 'destroyByPost'])
+                ->name('media.destroy.post');
+
             Route::get('/settings', [SettingsController::class, 'index'])
                 ->name('settings.index');
 
@@ -124,6 +127,9 @@ Route::middleware(['auth'])->group(function () {
 
             Route::delete('/media/{media}', [CompanyMediaController::class, 'destroy'])
                 ->name('media.destroy');
+
+            Route::post('/media/{media}/delete', [CompanyMediaController::class, 'destroyByPost'])
+                ->name('media.destroy.post');
         });
 
     Route::middleware(['role:guest'])
@@ -163,4 +169,4 @@ Route::get('/dev-logout', function () {
     return redirect('/login');
 });
 
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';
