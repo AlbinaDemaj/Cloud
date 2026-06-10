@@ -95,92 +95,90 @@ export default function Index({ folders = [] }) {
                             <tbody className="divide-y divide-slate-100">
                                 {folders.length > 0 ? (
                                     folders.map((folder) => (
-                                        <tr
-                                            key={folder.id}
-                                            className="transition hover:bg-slate-50/80"
-                                        >
-                                            <td className="px-6 py-5">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#7B61FF]/10 text-[#7B61FF]">
-                                                        <Folder size={20} />
-                                                    </div>
+    <>
+        <tr
+            key={folder.id}
+            className="transition hover:bg-slate-50/80"
+        >
+            <td className="px-6 py-5">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#7B61FF]/10 text-[#7B61FF]">
+                        <Folder size={20} />
+                    </div>
 
-                                                    <div>
-                                                        <p className="font-bold text-slate-950">
-                                                            {folder.name}
-                                                        </p>
+                    <div>
+                        <p className="font-bold text-slate-950">
+                            {folder.name}
+                        </p>
 
-                                                        <p className="text-xs text-slate-500">
-                                                            ID: #{folder.id}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </td>
+                        <p className="text-xs text-slate-500">
+                            Main Folder
+                        </p>
+                    </div>
+                </div>
+            </td>
 
-                                            <td className="px-6 py-5">
-                                                {folder.guest ? (
-                                                    <div className="flex items-center gap-2 text-sm text-slate-600">
-                                                        <User size={15} />
-                                                        {folder.guest.name}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-sm text-slate-400">
-                                                        —
-                                                    </span>
-                                                )}
-                                            </td>
+            <td className="px-6 py-5">
+                {folder.guest?.name}
+            </td>
 
-                                            <td className="px-6 py-5">
-                                                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-                                                    {folder.media_count || 0} files
-                                                </span>
-                                            </td>
+            <td className="px-6 py-5">
+                {folder.media_count || 0}
+            </td>
 
-                                            <td className="px-6 py-5 text-sm text-slate-500">
-                                                {folder.created_at
-                                                    ? new Date(
-                                                          folder.created_at
-                                                      ).toLocaleDateString()
-                                                    : "—"}
-                                            </td>
+            <td className="px-6 py-5 text-sm text-slate-500">
+                {folder.created_at
+                    ? new Date(folder.created_at).toLocaleDateString()
+                    : "—"}
+            </td>
 
-                                            <td className="px-6 py-5">
-                                                <div className="flex justify-end gap-2">
-                                                    <Link
-                                                        href={route(
-                                                            "company.folders.show",
-                                                            folder.id
-                                                        )}
-                                                        className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-100"
-                                                        title="View Folder"
-                                                    >
-                                                        <Eye size={17} />
-                                                    </Link>
+            <td className="px-6 py-5">
+                ...
+            </td>
+        </tr>
 
-                                                    <Link
-                                                        href={route(
-                                                            "company.folders.edit",
-                                                            folder.id
-                                                        )}
-                                                        className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-100"
-                                                        title="Edit Folder"
-                                                    >
-                                                        <Pencil size={17} />
-                                                    </Link>
+        {folder.children?.map((child) => (
+            <tr
+                key={child.id}
+                className="bg-slate-50"
+            >
+                <td className="px-6 py-5">
+                    <div className="ml-10 flex items-center gap-3">
+                        <Folder size={16} />
+                        <span className="font-medium">
+                            ↳ {child.name}
+                        </span>
+                    </div>
+                </td>
 
-                                                    <button
-                                                        onClick={() =>
-                                                            deleteFolder(folder.id)
-                                                        }
-                                                        className="rounded-xl border border-rose-100 p-2 text-rose-600 hover:bg-rose-50"
-                                                        title="Delete Folder"
-                                                    >
-                                                        <Trash2 size={17} />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))
+                <td className="px-6 py-5">
+                    {child.guest?.name}
+                </td>
+
+                <td className="px-6 py-5">
+                    {child.media_count || 0}
+                </td>
+
+                <td className="px-6 py-5">
+                    {child.created_at
+                        ? new Date(child.created_at).toLocaleDateString()
+                        : "—"}
+                </td>
+
+                <td className="px-6 py-5">
+                    <Link
+                        href={route(
+                            "company.folders.show",
+                            child.id
+                        )}
+                    >
+                        View
+                    </Link>
+                </td>
+            </tr>
+        ))}
+    </>
+))
                                 ) : (
                                     <tr>
                                         <td

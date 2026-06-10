@@ -20,7 +20,11 @@ class FolderController extends Controller
     public function index()
     {
         $folders = Folder::where('company_id', $this->companyId())
-            ->with('guest:id,name,username,email')
+            ->whereNull('parent_id')
+            ->with([
+                'guest:id,name,username,email',
+                'children.guest:id,name,username,email',
+            ])
             ->withCount('media')
             ->latest()
             ->get();
@@ -38,8 +42,14 @@ class FolderController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'username', 'email']);
 
+        $parentFolders = Folder::where('company_id', $this->companyId())
+            ->whereNull('parent_id')
+            ->orderBy('name')
+            ->get(['id', 'name', 'guest_id']);
+
         return Inertia::render('Company/Folders/Create', [
             'guests' => $guests,
+            'parentFolders' => $parentFolders,
         ]);
     }
 
@@ -47,6 +57,7 @@ class FolderController extends Controller
     {
         $validated = $request->validate([
             'guest_id' => ['required', 'exists:users,id'],
+            'parent_id' => ['nullable', 'exists:folders,id'],
             'name' => ['required', 'string', 'max:255'],
         ]);
 
@@ -55,11 +66,21 @@ class FolderController extends Controller
             ->where('company_id', $this->companyId())
             ->firstOrFail();
 
+        $parentId = $validated['parent_id'] ?? null;
+
+        if ($parentId) {
+            Folder::where('id', $parentId)
+                ->where('company_id', $this->companyId())
+                ->where('guest_id', $guest->id)
+                ->firstOrFail();
+        }
+
         Folder::create([
             'company_id' => $this->companyId(),
             'guest_id' => $guest->id,
+            'parent_id' => $parentId,
             'name' => $validated['name'],
-            'is_visible' => true,
+            'is_active' => true,
         ]);
 
         return redirect()
@@ -71,7 +92,11 @@ class FolderController extends Controller
     {
         $this->authorizeFolder($folder);
 
-        $folder->load('guest:id,name,username,email');
+        $folder->load([
+            'guest:id,name,username,email',
+            'parent:id,name',
+            'children',
+        ]);
 
         $media = Media::where('folder_id', $folder->id)
             ->latest()
@@ -92,9 +117,16 @@ class FolderController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'username', 'email']);
 
+        $parentFolders = Folder::where('company_id', $this->companyId())
+            ->whereNull('parent_id')
+            ->where('id', '!=', $folder->id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'guest_id']);
+
         return Inertia::render('Company/Folders/Edit', [
             'folder' => $folder,
             'guests' => $guests,
+            'parentFolders' => $parentFolders,
         ]);
     }
 
@@ -104,6 +136,7 @@ class FolderController extends Controller
 
         $validated = $request->validate([
             'guest_id' => ['required', 'exists:users,id'],
+            'parent_id' => ['nullable', 'exists:folders,id'],
             'name' => ['required', 'string', 'max:255'],
         ]);
 
@@ -112,8 +145,19 @@ class FolderController extends Controller
             ->where('company_id', $this->companyId())
             ->firstOrFail();
 
+        $parentId = $validated['parent_id'] ?? null;
+
+        if ($parentId) {
+            Folder::where('id', $parentId)
+                ->where('company_id', $this->companyId())
+                ->where('guest_id', $guest->id)
+                ->where('id', '!=', $folder->id)
+                ->firstOrFail();
+        }
+
         $folder->update([
             'guest_id' => $guest->id,
+            'parent_id' => $parentId,
             'name' => $validated['name'],
         ]);
 

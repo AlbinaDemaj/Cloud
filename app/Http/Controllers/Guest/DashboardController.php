@@ -19,19 +19,19 @@ class DashboardController extends Controller
     $media = Media::query()
         ->where('guest_id', $guest->id)
         ->where('is_visible', true)
-        ->with('folder:id,name,is_visible')
+        ->with('folder:id,name,parent_id,is_active')
         ->latest('uploaded_at')
         ->get()
-        ->filter(fn ($item) => !$item->folder || $item->folder->is_visible)
+        ->filter(fn ($item) => !$item->folder || $item->folder->is_active)
         ->map(fn ($item) => [
             'id' => $item->id,
             'folder_id' => $item->folder_id,
             'folder_name' => $item->folder?->name ?? 'Pa folder',
+            'parent_id' => $item->folder?->parent_id,
             'file_type' => $item->file_type,
             'original_name' => $item->original_name,
             'file_url' => $item->file_url,
             'thumbnail_url' => $item->thumbnail_url,
-            'download_url' => route('guest.media.download', $item->id),
             'is_visible' => (bool) $item->is_visible,
             'uploaded_at' => $item->uploaded_at?->format('Y-m-d H:i:s'),
         ]);
@@ -40,6 +40,7 @@ class DashboardController extends Controller
         ->groupBy('folder_name')
         ->map(fn ($items, $folderName) => [
             'name' => $folderName,
+            'parent_id' => $items->first()['parent_id'] ?? null,
             'items' => $items->values(),
         ])
         ->values();

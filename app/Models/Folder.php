@@ -9,6 +9,7 @@ class Folder extends Model
     protected $fillable = [
         'company_id',
         'guest_id',
+        'parent_id',
         'name',
         'description',
         'is_active',
@@ -31,5 +32,15 @@ class Folder extends Model
     public function media()
     {
         return $this->hasMany(Media::class, 'folder_id');
+    }
+
+    public function parent()
+    {
+        return $this->belongsTo(Folder::class, 'parent_id');
+    }
+
+    public function children()
+    {
+        return $this->hasMany(Folder::class, 'parent_id');
     }
 }

@@ -12,12 +12,29 @@ export default function Dashboard({ auth, media = [] }) {
     const visibleMedia = useMemo(() => {
         return allVisibleMedia.filter((item) => {
             const name = item.original_name || '';
-            const matchesSearch = name.toLowerCase().includes(search.toLowerCase());
+            const folderName = item.folder_name || '';
+            const searchText = `${name} ${folderName}`.toLowerCase();
+
+            const matchesSearch = searchText.includes(search.toLowerCase());
             const matchesFilter = filter === 'all' || item.file_type === filter;
 
             return matchesSearch && matchesFilter;
         });
     }, [media, search, filter]);
+
+    const groupedFolders = useMemo(() => {
+        return visibleMedia.reduce((groups, item) => {
+            const folderName = item.folder_name || 'Pa folder';
+
+            if (!groups[folderName]) {
+                groups[folderName] = [];
+            }
+
+            groups[folderName].push(item);
+
+            return groups;
+        }, {});
+    }, [visibleMedia]);
 
     const photos = allVisibleMedia.filter((item) => item.file_type === 'photo');
     const videos = allVisibleMedia.filter((item) => item.file_type === 'video');
@@ -28,7 +45,7 @@ export default function Dashboard({ auth, media = [] }) {
         setSelectedIds((current) =>
             current.includes(id)
                 ? current.filter((itemId) => itemId !== id)
-                : [...current, id]
+                : [...current, id],
         );
     };
 
@@ -61,7 +78,8 @@ export default function Dashboard({ auth, media = [] }) {
                                 </h1>
 
                                 <p className="mt-2 max-w-xl text-slate-300">
-                                    View, preview and download the media shared with you.
+                                    View, preview and download the media shared
+                                    with you.
                                 </p>
                             </div>
                         </div>
@@ -87,10 +105,10 @@ export default function Dashboard({ auth, media = [] }) {
                 <section className="rounded-[2rem] border border-white/10 bg-[#0D1628] p-7 shadow-2xl shadow-black/20">
                     <div className="mb-7 flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
                         <div>
-                            <h2 className="text-3xl font-black">Your Media</h2>
+                            <h2 className="text-3xl font-black">Your Folders</h2>
 
                             <p className="mt-2 text-slate-400">
-                                Browse, preview and download your shared files.
+                                Media files are grouped by folders shared with you.
                             </p>
                         </div>
 
@@ -139,7 +157,7 @@ export default function Dashboard({ auth, media = [] }) {
                                 <input
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
-                                    placeholder="Search media..."
+                                    placeholder="Search media or folder..."
                                     className="w-full rounded-2xl border border-white/10 bg-black/25 py-3 pl-12 pr-5 text-white outline-none placeholder:text-slate-500 focus:border-blue-400 lg:w-80"
                                 />
                             </div>
@@ -161,16 +179,43 @@ export default function Dashboard({ auth, media = [] }) {
                             </p>
                         </div>
                     ) : (
-                        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                            {visibleMedia.map((item) => (
-                                <MediaCard
-                                    key={item.id}
-                                    item={item}
-                                    fileUrl={getFileUrl(item)}
-                                    onOpen={() => setPreview(item)}
-                                    selected={selectedIds.includes(item.id)}
-                                    onSelect={() => toggleSelect(item.id)}
-                                />
+                        <div className="space-y-8">
+                            {Object.entries(groupedFolders).map(([folderName, items]) => (
+                                <div
+                                    key={folderName}
+                                    className="rounded-[2rem] border border-white/10 bg-white/[0.03] p-5"
+                                >
+                                    <div className="mb-5 flex items-center justify-between gap-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-300">
+                                                <FolderIcon />
+                                            </div>
+
+                                            <div>
+                                                <h3 className="text-xl font-black">
+                                                    {folderName}
+                                                </h3>
+
+                                                <p className="text-sm text-slate-400">
+                                                    {items.length} files
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                        {items.map((item) => (
+                                            <MediaCard
+                                                key={item.id}
+                                                item={item}
+                                                fileUrl={getFileUrl(item)}
+                                                onOpen={() => setPreview(item)}
+                                                selected={selectedIds.includes(item.id)}
+                                                onSelect={() => toggleSelect(item.id)}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
                             ))}
                         </div>
                     )}
@@ -252,13 +297,13 @@ function MediaCard({ item, fileUrl, onOpen, selected, onSelect }) {
                     />
                 ) : (
                     <video
-    src={fileUrl}
-    controls
-    muted
-    preload="metadata"
-    playsInline
-    className="h-full w-full object-cover"
-/>
+                        src={fileUrl}
+                        controls
+                        muted
+                        preload="metadata"
+                        playsInline
+                        className="h-full w-full object-cover"
+                    />
                 )}
 
                 <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-xl bg-black/60 px-3 py-1 text-xs font-black uppercase backdrop-blur">
@@ -339,13 +384,13 @@ function PreviewModal({ item, fileUrl, onClose }) {
 
                 <div className="bg-black p-4">
                     {item.file_type === 'video' ? (
-                       <video
-    src={fileUrl}
-    controls
-    autoPlay
-    playsInline
-    className="max-h-[78vh] w-full rounded-2xl object-contain"
-/>
+                        <video
+                            src={fileUrl}
+                            controls
+                            autoPlay
+                            playsInline
+                            className="max-h-[78vh] w-full rounded-2xl object-contain"
+                        />
                     ) : (
                         <img
                             src={fileUrl}
