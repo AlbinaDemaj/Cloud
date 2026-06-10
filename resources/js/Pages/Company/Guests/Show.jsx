@@ -18,8 +18,11 @@ import { useEffect, useMemo, useState } from 'react';
 export default function Show({ guest, folders = [] }) {
     const [media, setMedia] = useState([]);
     const [loading, setLoading] = useState(true);
+
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState(0);
+    const [uploadInfo, setUploadInfo] = useState('');
+
     const [preview, setPreview] = useState(null);
     const [selected, setSelected] = useState([]);
     const [selectedFolderId, setSelectedFolderId] = useState('');
@@ -31,7 +34,6 @@ export default function Show({ guest, folders = [] }) {
 
     const getFileUrl = (item) => {
         if (!item) return '';
-
         if (item.file_url) return item.file_url;
         if (item.url) return item.url;
 
@@ -77,7 +79,7 @@ export default function Show({ guest, folders = [] }) {
     const uploadFiles = async (files) => {
         const selectedFiles = Array.from(files || []);
 
-        if (!selectedFiles.length) return;
+        if (!selectedFiles.length || uploading) return;
 
         const formData = new FormData();
 
@@ -91,15 +93,24 @@ export default function Show({ guest, folders = [] }) {
             formData.append('files[]', file);
         });
 
+        const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+        const fileNames =
+            selectedFiles.length === 1
+                ? selectedFiles[0].name
+                : `${selectedFiles.length} files selected`;
+
         try {
             setUploading(true);
             setProgress(0);
+            setUploadInfo(fileNames);
 
             await axios.post('/api/media/upload', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
                 },
                 onUploadProgress: (event) => {
+                    if (!event.total) return;
+
                     const percent = Math.round(
                         (event.loaded * 100) / event.total,
                     );
@@ -108,13 +119,17 @@ export default function Show({ guest, folders = [] }) {
                 },
             });
 
+            setProgress(100);
             await fetchMedia();
         } catch (error) {
             console.error(error);
             alert('Upload failed.');
         } finally {
-            setUploading(false);
-            setProgress(0);
+            setTimeout(() => {
+                setUploading(false);
+                setProgress(0);
+                setUploadInfo('');
+            }, 900);
         }
     };
 
@@ -254,9 +269,16 @@ export default function Show({ guest, folders = [] }) {
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
                         e.preventDefault();
-                        uploadFiles(e.dataTransfer.files);
+
+                        if (!uploading) {
+                            uploadFiles(e.dataTransfer.files);
+                        }
                     }}
-                    className="overflow-hidden rounded-[34px] border border-dashed border-blue-300 bg-white shadow-sm"
+                    className={`overflow-hidden rounded-[34px] border border-dashed bg-white shadow-sm transition ${
+                        uploading
+                            ? 'border-blue-400 ring-4 ring-blue-100'
+                            : 'border-blue-300'
+                    }`}
                 >
                     <div className="grid gap-6 p-7 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
                         <div className="flex items-start gap-5">
@@ -283,10 +305,11 @@ export default function Show({ guest, folders = [] }) {
 
                                 <select
                                     value={selectedFolderId}
+                                    disabled={uploading}
                                     onChange={(e) =>
                                         setSelectedFolderId(e.target.value)
                                     }
-                                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:bg-white"
+                                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                     <option value="">No folder</option>
 
@@ -298,34 +321,61 @@ export default function Show({ guest, folders = [] }) {
                                 </select>
                             </div>
 
-                            <label className="flex cursor-pointer items-center justify-center gap-3 rounded-2xl bg-slate-950 px-6 py-4 text-sm font-black text-white transition hover:bg-slate-800">
+                            <label
+                                className={`flex items-center justify-center gap-3 rounded-2xl px-6 py-4 text-sm font-black text-white transition ${
+                                    uploading
+                                        ? 'cursor-not-allowed bg-slate-400'
+                                        : 'cursor-pointer bg-slate-950 hover:bg-slate-800'
+                                }`}
+                            >
                                 <UploadCloud size={18} />
-                                Select Files
+                                {uploading ? 'Uploading...' : 'Select Files'}
 
                                 <input
                                     type="file"
                                     multiple
+                                    disabled={uploading}
                                     accept="image/*,video/*"
                                     className="hidden"
-                                    onChange={(e) => uploadFiles(e.target.files)}
+                                    onChange={(e) => {
+                                        uploadFiles(e.target.files);
+                                        e.target.value = '';
+                                    }}
                                 />
                             </label>
                         </div>
                     </div>
 
                     {uploading && (
-                        <div className="border-t border-slate-100 px-7 py-5">
-                            <div className="mb-2 flex justify-between text-sm font-bold text-slate-600">
-                                <span>Uploading...</span>
-                                <span>{progress}%</span>
+                        <div className="border-t border-slate-100 bg-slate-50 px-7 py-6">
+                            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p className="text-sm font-black text-slate-800">
+                                        {progress >= 100
+                                            ? 'Upload complete'
+                                            : 'Uploading media...'}
+                                    </p>
+
+                                    <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+                                        {uploadInfo}
+                                    </p>
+                                </div>
+
+                                <span className="text-2xl font-black text-blue-600">
+                                    {progress}%
+                                </span>
                             </div>
 
-                            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-4 overflow-hidden rounded-full bg-slate-200">
                                 <div
-                                    className="h-full rounded-full bg-blue-600 transition-all"
+                                    className="h-full rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500 transition-all duration-300"
                                     style={{ width: `${progress}%` }}
                                 />
                             </div>
+
+                            <p className="mt-3 text-xs font-semibold text-slate-500">
+                                Please wait until the upload finishes. Do not refresh the page.
+                            </p>
                         </div>
                     )}
                 </div>
