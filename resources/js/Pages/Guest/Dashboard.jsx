@@ -252,11 +252,13 @@ function MediaCard({ item, fileUrl, onOpen, selected, onSelect }) {
                     />
                 ) : (
                     <video
-                        src={fileUrl}
-                        muted
-                        preload="metadata"
-                        className="h-full w-full object-cover"
-                    />
+    src={fileUrl}
+    controls
+    muted
+    preload="metadata"
+    playsInline
+    className="h-full w-full object-cover"
+/>
                 )}
 
                 <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-xl bg-black/60 px-3 py-1 text-xs font-black uppercase backdrop-blur">
@@ -337,12 +339,13 @@ function PreviewModal({ item, fileUrl, onClose }) {
 
                 <div className="bg-black p-4">
                     {item.file_type === 'video' ? (
-                        <video
-                            src={fileUrl}
-                            controls
-                            autoPlay
-                            className="max-h-[78vh] w-full rounded-2xl object-contain"
-                        />
+                       <video
+    src={fileUrl}
+    controls
+    autoPlay
+    playsInline
+    className="max-h-[78vh] w-full rounded-2xl object-contain"
+/>
                     ) : (
                         <img
                             src={fileUrl}
