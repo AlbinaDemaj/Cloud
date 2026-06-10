@@ -13,50 +13,50 @@ use ZipArchive;
 class DashboardController extends Controller
 {
     public function index()
-    {
-        $guest = Auth::user();
+{
+    $guest = Auth::user();
 
-        $media = Media::query()
-            ->where('guest_id', $guest->id)
-            ->where('is_visible', true)
-            ->with('folder:id,name')
-            ->latest('uploaded_at')
-            ->get()
-            ->map(fn ($item) => [
-                'id' => $item->id,
-                'folder_id' => $item->folder_id,
-                'folder_name' => $item->folder?->name ?? 'Pa folder',
-                'file_type' => $item->file_type,
-                'original_name' => $item->original_name,
-                 'file_url' => $item->file_url,
-                 'thumbnail_url' => $item->thumbnail_path
-                    ? url($item->thumbnail_path)
-                    : null,
-                'is_visible' => (bool) $item->is_visible,
-                'uploaded_at' => $item->uploaded_at?->format('Y-m-d H:i:s'),
-            ]);
-
-        $folders = $media
-            ->groupBy('folder_name')
-            ->map(fn ($items, $folderName) => [
-                'name' => $folderName,
-                'items' => $items->values(),
-            ])
-            ->values();
-
-        return Inertia::render('Guest/Dashboard', [
-            'auth' => [
-                'user' => [
-                    'id' => $guest->id,
-                    'name' => $guest->name,
-                    'email' => $guest->email,
-                    'role' => $guest->role,
-                ],
-            ],
-            'media' => $media,
-            'folders' => $folders,
+    $media = Media::query()
+        ->where('guest_id', $guest->id)
+        ->where('is_visible', true)
+        ->with('folder:id,name,is_visible')
+        ->latest('uploaded_at')
+        ->get()
+        ->filter(fn ($item) => !$item->folder || $item->folder->is_visible)
+        ->map(fn ($item) => [
+            'id' => $item->id,
+            'folder_id' => $item->folder_id,
+            'folder_name' => $item->folder?->name ?? 'Pa folder',
+            'file_type' => $item->file_type,
+            'original_name' => $item->original_name,
+            'file_url' => $item->file_url,
+            'thumbnail_url' => $item->thumbnail_url,
+            'download_url' => route('guest.media.download', $item->id),
+            'is_visible' => (bool) $item->is_visible,
+            'uploaded_at' => $item->uploaded_at?->format('Y-m-d H:i:s'),
         ]);
-    }
+
+    $folders = $media
+        ->groupBy('folder_name')
+        ->map(fn ($items, $folderName) => [
+            'name' => $folderName,
+            'items' => $items->values(),
+        ])
+        ->values();
+
+    return Inertia::render('Guest/Dashboard', [
+        'auth' => [
+            'user' => [
+                'id' => $guest->id,
+                'name' => $guest->name,
+                'email' => $guest->email,
+                'role' => $guest->role,
+            ],
+        ],
+        'media' => $media->values(),
+        'folders' => $folders,
+    ]);
+}
 
     public function downloadAll()
     {
