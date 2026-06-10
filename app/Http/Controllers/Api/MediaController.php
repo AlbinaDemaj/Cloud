@@ -27,13 +27,15 @@ class MediaController extends Controller
             ->where('role', 'guest')
             ->firstOrFail();
 
-        $companyId = $guest->company_id;
+        $company = User::where('id', $guest->company_id)
+            ->where('role', 'company')
+            ->firstOrFail();
 
-        if (!$companyId) {
-            return response()->json([
-                'message' => 'This guest does not have company_id.',
-            ], 422);
-        }
+        $companyId = $company->id;
+        $guestId = $guest->id;
+
+        $companyFolder = $companyId . '-' . Str::slug($company->name ?: 'company');
+        $guestFolder = $guestId . '-' . Str::slug($guest->name ?: 'guest');
 
         $uploaded = [];
 
@@ -62,11 +64,10 @@ class MediaController extends Controller
                 ], 422);
             }
 
-            $guestId = $guest->id;
             $extension = $file->getClientOriginalExtension();
             $filename = Str::uuid() . '.' . $extension;
 
-            $directory = "uploads/media/{$companyId}/{$guestId}";
+            $directory = "uploads/media/{$companyFolder}/{$guestFolder}";
             $publicPath = public_path($directory);
 
             if (!File::exists($publicPath)) {

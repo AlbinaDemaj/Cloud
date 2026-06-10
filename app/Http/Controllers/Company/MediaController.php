@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 class MediaController extends Controller
@@ -75,6 +76,8 @@ class MediaController extends Controller
             ],
         ]);
 
+        $company = Auth::user();
+
         $guest = User::query()
             ->where('id', $validated['guest_id'])
             ->where('role', 'guest')
@@ -96,6 +99,9 @@ class MediaController extends Controller
             $folderId = $folder->id;
         }
 
+        $companyFolder = $company->id . '-' . Str::slug($company->name ?: 'company');
+        $guestFolder = $guest->id . '-' . Str::slug($guest->name ?: 'guest');
+
         foreach ($request->file('files', []) as $file) {
             $mime = $file->getMimeType();
             $fileSize = $file->getSize();
@@ -103,7 +109,7 @@ class MediaController extends Controller
             $extension = $file->getClientOriginalExtension();
             $type = str_starts_with($mime, 'video/') ? 'video' : 'photo';
 
-            $directory = 'uploads/media/' . $this->companyId() . '/' . $guest->id;
+            $directory = "uploads/media/{$companyFolder}/{$guestFolder}";
             $publicPath = public_path($directory);
 
             if (!File::exists($publicPath)) {
