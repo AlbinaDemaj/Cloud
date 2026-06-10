@@ -7,21 +7,24 @@ export default function CompanyLayout({
     const { auth } = usePage().props;
 
     const user = auth?.user;
-
-    const menu = [
-        {
-            label: 'Dashboard',
-            href: '/company/dashboard',
-        },
-        {
-            label: 'Guests',
-            href: '/company/guests',
-        },
-        {
-            label: 'Media Files',
-            href: '/company/media',
-        },
-    ];
+const menu = [
+    {
+        label: 'Dashboard',
+        href: '/company/dashboard',
+    },
+    {
+        label: 'Guests',
+        href: '/company/guests',
+    },
+    {
+        label: 'Folders',
+        href: '/company/folders',
+    },
+    {
+        label: 'Media Files',
+        href: '/company/media',
+    },
+];
 
     const userInitial = user?.name?.charAt(0)?.toUpperCase() || 'C';
 
