@@ -14,6 +14,9 @@ use Inertia\Inertia;
 
 class MediaController extends Controller
 {
+    private const GUEST_STORAGE_LIMIT_BYTES = 30 * 1024 * 1024 * 1024; // 30GB
+    private const MAX_FILE_UPLOAD_KB = 31457280; // 30GB në KB për Laravel validation
+
     private function companyId(): int
     {
         return (int) Auth::id();
@@ -72,7 +75,7 @@ class MediaController extends Controller
                 'required',
                 'file',
                 'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi',
-                'max:512000',
+                'max:' . self::MAX_FILE_UPLOAD_KB,
             ],
         ]);
 
@@ -99,10 +102,30 @@ class MediaController extends Controller
             $folderId = $folder->id;
         }
 
+        $files = $request->file('files', []);
+
+        $currentUsedBytes = (int) Media::query()
+            ->where('company_id', $this->companyId())
+            ->where('guest_id', $guest->id)
+            ->sum('file_size');
+
+        $newUploadBytes = collect($files)->sum(function ($file) {
+            return (int) $file->getSize();
+        });
+
+        if (($currentUsedBytes + $newUploadBytes) > self::GUEST_STORAGE_LIMIT_BYTES) {
+            $usedGb = round($currentUsedBytes / 1024 / 1024 / 1024, 2);
+            $newGb = round($newUploadBytes / 1024 / 1024 / 1024, 2);
+
+            return back()->withErrors([
+                'files' => "Ky guest ka limit maksimal 30GB. Aktualisht ka përdorur {$usedGb}GB dhe po tenton të ngarkojë edhe {$newGb}GB.",
+            ]);
+        }
+
         $companyFolder = $company->id . '-' . Str::slug($company->name ?: 'company');
         $guestFolder = $guest->id . '-' . Str::slug($guest->name ?: 'guest');
 
-        foreach ($request->file('files', []) as $file) {
+        foreach ($files as $file) {
             $mime = $file->getMimeType();
             $fileSize = $file->getSize();
             $originalName = $file->getClientOriginalName();
