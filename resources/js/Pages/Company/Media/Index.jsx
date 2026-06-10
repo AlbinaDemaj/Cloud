@@ -32,6 +32,8 @@ export default function Index({
         type: filters.type || "",
     });
 
+    const uploadPercentage = uploadForm.progress?.percentage || 0;
+
     const filteredFolders = folders.filter((folder) => {
         if (!uploadForm.data.guest_id) return true;
 
@@ -89,7 +91,10 @@ export default function Index({
 
         if (!item.file_path) return "";
 
-        if (item.file_path.startsWith("http://") || item.file_path.startsWith("https://")) {
+        if (
+            item.file_path.startsWith("http://") ||
+            item.file_path.startsWith("https://")
+        ) {
             return item.file_path;
         }
 
@@ -173,11 +178,12 @@ export default function Index({
 
                                 <select
                                     value={uploadForm.data.guest_id}
+                                    disabled={uploadForm.processing}
                                     onChange={(e) => {
                                         uploadForm.setData("guest_id", e.target.value);
                                         uploadForm.setData("folder_id", "");
                                     }}
-                                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B61FF] focus:ring-4 focus:ring-[#7B61FF]/10"
+                                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B61FF] focus:ring-4 focus:ring-[#7B61FF]/10 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                     <option value="">Choose guest</option>
                                     {guests.map((guest) => (
@@ -202,10 +208,11 @@ export default function Index({
 
                                 <select
                                     value={uploadForm.data.folder_id}
+                                    disabled={uploadForm.processing}
                                     onChange={(e) =>
                                         uploadForm.setData("folder_id", e.target.value)
                                     }
-                                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B61FF] focus:ring-4 focus:ring-[#7B61FF]/10"
+                                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B61FF] focus:ring-4 focus:ring-[#7B61FF]/10 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                     <option value="">No folder</option>
                                     {filteredFolders.map((folder) => (
@@ -227,11 +234,19 @@ export default function Index({
                                     Files
                                 </label>
 
-                                <label className="flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center transition hover:border-[#7B61FF] hover:bg-[#7B61FF]/5">
+                                <label
+                                    className={`flex flex-col items-center justify-center rounded-3xl border-2 border-dashed px-5 py-10 text-center transition ${
+                                        uploadForm.processing
+                                            ? "cursor-not-allowed border-slate-200 bg-slate-100 opacity-70"
+                                            : "cursor-pointer border-slate-300 bg-slate-50 hover:border-[#7B61FF] hover:bg-[#7B61FF]/5"
+                                    }`}
+                                >
                                     <Upload size={34} className="mb-3 text-[#7B61FF]" />
 
                                     <span className="text-sm font-bold text-slate-800">
-                                        Click to select files
+                                        {uploadForm.processing
+                                            ? "Uploading files..."
+                                            : "Click to select files"}
                                     </span>
 
                                     <span className="mt-1 text-xs text-slate-500">
@@ -241,19 +256,20 @@ export default function Index({
                                     <input
                                         type="file"
                                         multiple
+                                        disabled={uploadForm.processing}
                                         accept="image/*,video/*"
                                         className="hidden"
                                         onChange={(e) =>
                                             uploadForm.setData(
                                                 "files",
-                                                Array.from(e.target.files || [])
+                                                Array.from(e.target.files || []),
                                             )
                                         }
                                     />
                                 </label>
 
                                 {uploadForm.data.files?.length > 0 && (
-                                    <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
+                                    <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-sm font-semibold text-slate-600">
                                         {uploadForm.data.files.length} file selected
                                     </div>
                                 )}
@@ -265,13 +281,42 @@ export default function Index({
                                 )}
                             </div>
 
+                            {uploadForm.processing && (
+                                <div className="rounded-2xl border border-[#7B61FF]/10 bg-[#7B61FF]/5 p-4">
+                                    <div className="mb-2 flex items-center justify-between">
+                                        <span className="text-sm font-black text-slate-700">
+                                            Uploading...
+                                        </span>
+
+                                        <span className="text-lg font-black text-[#7B61FF]">
+                                            {uploadPercentage}%
+                                        </span>
+                                    </div>
+
+                                    <div className="h-3 overflow-hidden rounded-full bg-slate-200">
+                                        <div
+                                            className="h-full rounded-full bg-[#7B61FF] transition-all duration-300"
+                                            style={{
+                                                width: `${uploadPercentage}%`,
+                                            }}
+                                        />
+                                    </div>
+
+                                    <p className="mt-2 text-xs font-semibold text-slate-500">
+                                        Please wait until upload finishes. Do not refresh the page.
+                                    </p>
+                                </div>
+                            )}
+
                             <button
                                 type="submit"
                                 disabled={uploadForm.processing}
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#7B61FF] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-[#7B61FF]/25 transition hover:bg-[#6A4DFF] disabled:opacity-60"
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#7B61FF] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-[#7B61FF]/25 transition hover:bg-[#6A4DFF] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 <Upload size={18} />
-                                {uploadForm.processing ? "Uploading..." : "Upload Media"}
+                                {uploadForm.processing
+                                    ? `Uploading... ${uploadPercentage}%`
+                                    : "Upload Media"}
                             </button>
                         </div>
                     </form>
