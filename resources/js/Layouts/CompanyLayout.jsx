@@ -5,26 +5,28 @@ export default function CompanyLayout({
     title = 'Company Dashboard',
 }) {
     const { auth } = usePage().props;
-
     const user = auth?.user;
-const menu = [
-    {
-        label: 'Dashboard',
-        href: '/company/dashboard',
-    },
-    {
-        label: 'Guests',
-        href: '/company/guests',
-    },
-    {
-        label: 'Folders',
-        href: '/company/folders',
-    },
-    {
-        label: 'Media Files',
-        href: '/company/media',
-    },
-];
+
+    const currentPath = window.location.pathname;
+
+    const menu = [
+        {
+            label: 'Dashboard',
+            href: '/company/dashboard',
+        },
+        {
+            label: 'Guests',
+            href: '/company/guests',
+        },
+        {
+            label: 'Folders',
+            href: '/company/folders',
+        },
+        {
+            label: 'Media Files',
+            href: '/company/media',
+        },
+    ];
 
     const userInitial = user?.name?.charAt(0)?.toUpperCase() || 'C';
 
@@ -47,32 +49,48 @@ const menu = [
                     </p>
                 </div>
 
-                <nav className="flex-1 space-y-2">
-                    {menu.map((item) => (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            className="group flex items-center rounded-2xl px-5 py-4 text-sm font-bold text-slate-300 transition hover:bg-white/10 hover:text-white"
-                        >
-                            <span className="mr-4 h-2 w-2 rounded-full bg-blue-400 opacity-0 transition group-hover:opacity-100" />
+                <nav className="flex-1 space-y-2 overflow-y-auto">
+                    {menu.map((item) => {
+                        const isActive =
+                            currentPath === item.href ||
+                            currentPath.startsWith(`${item.href}/`);
 
-                            {item.label}
-                        </Link>
-                    ))}
+                        return (
+                            <Link
+                                key={item.href}
+                                href={item.href}
+                                className={`group flex items-center rounded-2xl px-5 py-4 text-sm font-bold transition ${
+                                    isActive
+                                        ? 'bg-white text-[#07101F]'
+                                        : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                                }`}
+                            >
+                                <span
+                                    className={`mr-4 h-2 w-2 rounded-full transition ${
+                                        isActive
+                                            ? 'bg-blue-500 opacity-100'
+                                            : 'bg-blue-400 opacity-0 group-hover:opacity-100'
+                                    }`}
+                                />
+
+                                {item.label}
+                            </Link>
+                        );
+                    })}
                 </nav>
 
-                <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.04] p-4">
+                <div className="mt-6 rounded-[1.7rem] border border-white/10 bg-white/[0.04] p-4">
                     <div className="flex items-center gap-3">
                         <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 text-sm font-black text-white">
                             {userInitial}
                         </div>
 
-                        <div>
-                            <p className="text-sm font-bold">
+                        <div className="min-w-0">
+                            <p className="truncate text-sm font-bold">
                                 {user?.name || 'Company User'}
                             </p>
 
-                            <p className="text-xs text-slate-400">
+                            <p className="truncate text-xs text-slate-400">
                                 {user?.username || 'company'}
                             </p>
                         </div>
@@ -97,7 +115,7 @@ const menu = [
                         </h2>
 
                         <p className="mt-1 text-sm text-slate-500">
-                            Manage guests and media files from one place.
+                            Manage guests, folders and media files from one place.
                         </p>
                     </div>
 
