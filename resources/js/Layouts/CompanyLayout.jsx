@@ -1,4 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
+import { useState } from 'react';
 
 export default function CompanyLayout({
     children,
@@ -6,47 +7,59 @@ export default function CompanyLayout({
 }) {
     const { auth } = usePage().props;
     const user = auth?.user;
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     const currentPath = window.location.pathname;
 
     const menu = [
-        {
-            label: 'Dashboard',
-            href: '/company/dashboard',
-        },
-        {
-            label: 'Guests',
-            href: '/company/guests',
-        },
-        {
-            label: 'Folders',
-            href: '/company/folders',
-        },
-        {
-            label: 'Media Files',
-            href: '/company/media',
-        },
+        { label: 'Dashboard', href: '/company/dashboard' },
+        { label: 'Guests', href: '/company/guests' },
+        { label: 'Folders', href: '/company/folders' },
+        { label: 'Media Files', href: '/company/media' },
     ];
 
     const userInitial = user?.name?.charAt(0)?.toUpperCase() || 'C';
 
     return (
         <div className="min-h-screen bg-[#F6F8FC]">
-            <aside className="fixed left-0 top-0 flex h-screen w-[290px] flex-col bg-[#07101F] p-6 text-white shadow-2xl">
-                <div className="mb-10 text-center">
-                    <img
-                        src="/images/MediaValut.png"
-                        alt="MediaVault"
-                        className="mx-auto h-20 w-auto object-contain"
-                    />
+            {sidebarOpen && (
+                <button
+                    type="button"
+                    onClick={() => setSidebarOpen(false)}
+                    className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+                    aria-label="Close sidebar overlay"
+                />
+            )}
 
-                    <h1 className="mt-4 text-2xl font-black tracking-tight">
-                        Cloud
-                    </h1>
+            <aside
+                className={`fixed left-0 top-0 z-50 flex h-screen w-[290px] flex-col bg-[#07101F] p-6 text-white shadow-2xl transition-transform duration-300 lg:translate-x-0 ${
+                    sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                }`}
+            >
+                <div className="mb-8 flex items-center justify-between lg:block lg:text-center">
+                    <div>
+                        <img
+                            src="/images/MediaValut.png"
+                            alt="MediaVault"
+                            className="mx-auto h-16 w-auto object-contain lg:h-20"
+                        />
 
-                    <p className="mt-1 text-sm text-slate-400">
-                        Company Panel
-                    </p>
+                        <h1 className="mt-3 text-xl font-black tracking-tight lg:text-2xl">
+                            Cloud
+                        </h1>
+
+                        <p className="mt-1 text-sm text-slate-400">
+                            Company Panel
+                        </p>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setSidebarOpen(false)}
+                        className="rounded-xl bg-white/10 px-3 py-2 text-sm font-bold lg:hidden"
+                    >
+                        ✕
+                    </button>
                 </div>
 
                 <nav className="flex-1 space-y-2 overflow-y-auto">
@@ -59,6 +72,7 @@ export default function CompanyLayout({
                             <Link
                                 key={item.href}
                                 href={item.href}
+                                onClick={() => setSidebarOpen(false)}
                                 className={`group flex items-center rounded-2xl px-5 py-4 text-sm font-bold transition ${
                                     isActive
                                         ? 'bg-white text-[#07101F]'
@@ -107,19 +121,29 @@ export default function CompanyLayout({
                 </div>
             </aside>
 
-            <main className="ml-[290px] min-h-screen">
-                <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/90 px-10 py-6 backdrop-blur-xl">
-                    <div>
-                        <h2 className="text-3xl font-black text-slate-950">
-                            {title}
-                        </h2>
+            <main className="min-h-screen lg:ml-[290px]">
+                <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-10 lg:py-6">
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setSidebarOpen(true)}
+                            className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white lg:hidden"
+                        >
+                            ☰
+                        </button>
 
-                        <p className="mt-1 text-sm text-slate-500">
-                            Manage guests, folders and media files from one place.
-                        </p>
+                        <div>
+                            <h2 className="text-xl font-black text-slate-950 sm:text-2xl lg:text-3xl">
+                                {title}
+                            </h2>
+
+                            <p className="mt-1 hidden text-sm text-slate-500 sm:block">
+                                Manage guests, folders and media files from one place.
+                            </p>
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                    <div className="hidden items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex">
                         <div className="text-right">
                             <p className="text-sm font-bold text-slate-900">
                                 {user?.name || 'Company User'}
@@ -136,9 +160,7 @@ export default function CompanyLayout({
                     </div>
                 </header>
 
-                <section className="p-8">
-                    {children}
-                </section>
+                <section className="p-4 sm:p-6 lg:p-8">{children}</section>
             </main>
         </div>
     );
