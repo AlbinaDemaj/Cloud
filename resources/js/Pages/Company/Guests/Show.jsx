@@ -1,213 +1,254 @@
 import CompanyLayout from '@/Layouts/CompanyLayout';
-import { Link } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import axios from 'axios';
 import {
     ArrowLeft,
-    Download,
-    Eye,
-    EyeOff,
     Folder,
-    Image,
-    Trash2,
+    FolderOpen,
+    FolderPlus,
     UploadCloud,
-    Video,
     X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function Show({ guest, folders = [] }) {
-    const [media, setMedia] = useState([]);
-    const [loading, setLoading] = useState(true);
-
-    const [uploading, setUploading] = useState(false);
-    const [progress, setProgress] = useState(0);
-    const [uploadInfo, setUploadInfo] = useState('');
-
-    const [preview, setPreview] = useState(null);
-    const [selected, setSelected] = useState([]);
-    const [selectedFolderId, setSelectedFolderId] = useState('');
-    const [filterFolderId, setFilterFolderId] = useState('all');
+    const [localFolders, setLocalFolders] = useState(folders || []);
+    const [showFolderModal, setShowFolderModal] = useState(false);
+    const [folderName, setFolderName] = useState('');
+    const [creatingFolder, setCreatingFolder] = useState(false);
+    const [draggingFolder, setDraggingFolder] = useState(false);
+    const [uploadingFolder, setUploadingFolder] = useState(false);
+    const [uploadText, setUploadText] = useState('');
 
     useEffect(() => {
-        fetchMedia();
-    }, []);
+        setLocalFolders(folders || []);
+    }, [folders]);
 
-    const getFileUrl = (item) => {
-        if (!item) return '';
-        if (item.file_url) return item.file_url;
-        if (item.url) return item.url;
+    const createFolderByName = async (name) => {
+        const cleanName = name?.trim();
 
-        if (item.file_path) {
-            return item.file_path.startsWith('/storage')
-                ? item.file_path
-                : `/storage/${item.file_path}`;
+        if (!cleanName) return null;
+
+        const response = await axios.post(
+            route('company.guests.folders.store', guest.id),
+            { name: cleanName },
+            { headers: { Accept: 'application/json' } },
+        );
+
+        const newFolder = response.data?.folder;
+
+        if (newFolder?.id) {
+            setLocalFolders((prev) => {
+                if (prev.some((folder) => folder.id === newFolder.id)) {
+                    return prev;
+                }
+
+                return [newFolder, ...prev];
+            });
+
+            return newFolder;
         }
 
-        return '';
+        return null;
     };
 
-    const filteredMedia = useMemo(() => {
-        if (filterFolderId === 'all') return media;
+    const createFolder = async (e) => {
+        e.preventDefault();
 
-        if (filterFolderId === 'no-folder') {
-            return media.filter((item) => !item.folder_id);
-        }
+        if (!folderName.trim() || creatingFolder) return;
 
-        return media.filter(
-            (item) => String(item.folder_id) === String(filterFolderId),
-        );
-    }, [media, filterFolderId]);
-
-    const photosCount = media.filter((item) => item.file_type === 'photo').length;
-    const videosCount = media.filter((item) => item.file_type === 'video').length;
-
-    const fetchMedia = async () => {
         try {
-            setLoading(true);
+            setCreatingFolder(true);
 
-            const response = await axios.get(`/api/media/guest/${guest.id}`);
+            await createFolderByName(folderName);
 
-            setMedia(response.data.media ?? response.data);
+            setFolderName('');
+            setShowFolderModal(false);
         } catch (error) {
             console.error(error);
-            alert('Media could not be loaded.');
+            alert(error.response?.data?.message || 'Folder could not be created.');
         } finally {
-            setLoading(false);
+            setCreatingFolder(false);
         }
     };
 
-    const uploadFiles = async (files) => {
+    const readAllFilesFromDirectory = async (directoryEntry) => {
+        const files = [];
+
+        const readDirectory = async (dirEntry) => {
+            const reader = dirEntry.createReader();
+
+            const readBatch = async () => {
+                const entries = await new Promise((resolve, reject) => {
+                    reader.readEntries(resolve, reject);
+                });
+
+                if (!entries.length) return;
+
+                for (const entry of entries) {
+                    if (entry.isFile) {
+                        const file = await new Promise((resolve, reject) => {
+                            entry.file(resolve, reject);
+                        });
+
+                        files.push(file);
+                    }
+
+                    if (entry.isDirectory) {
+                        await readDirectory(entry);
+                    }
+                }
+
+                await readBatch();
+            };
+
+            await readBatch();
+        };
+
+        await readDirectory(directoryEntry);
+
+        return files;
+    };
+
+    const uploadFilesToFolder = async (folderId, files) => {
         const selectedFiles = Array.from(files || []);
 
-        if (!selectedFiles.length || uploading) return;
+        if (!folderId || selectedFiles.length === 0) return;
 
-        const formData = new FormData();
+        const chunkSize = 20;
 
-        formData.append('guest_id', guest.id);
+        for (let i = 0; i < selectedFiles.length; i += chunkSize) {
+            const chunk = selectedFiles.slice(i, i + chunkSize);
 
-        if (selectedFolderId) {
-            formData.append('folder_id', selectedFolderId);
-        }
+            setUploadText(
+                `Uploading ${Math.min(i + chunk.length, selectedFiles.length)} / ${selectedFiles.length} files...`,
+            );
 
-        selectedFiles.forEach((file) => {
-            formData.append('files[]', file);
-        });
+            const formData = new FormData();
 
-        const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
-        const fileNames =
-            selectedFiles.length === 1
-                ? selectedFiles[0].name
-                : `${selectedFiles.length} files selected`;
+            formData.append('guest_id', guest.id);
+            formData.append('folder_id', folderId);
 
-        try {
-            setUploading(true);
-            setProgress(0);
-            setUploadInfo(fileNames);
+            chunk.forEach((file) => {
+                formData.append('files[]', file);
+            });
 
-            await axios.post('/api/media/upload', formData, {
+           await axios.post(route('company.media.upload'), formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
-                },
-                onUploadProgress: (event) => {
-                    if (!event.total) return;
-
-                    const percent = Math.round(
-                        (event.loaded * 100) / event.total,
-                    );
-
-                    setProgress(percent);
+                    Accept: 'application/json',
                 },
             });
-
-            setProgress(100);
-            await fetchMedia();
-        } catch (error) {
-            console.error(error);
-            alert('Upload failed.');
-        } finally {
-            setTimeout(() => {
-                setUploading(false);
-                setProgress(0);
-                setUploadInfo('');
-            }, 900);
         }
     };
 
-    const deleteMedia = async (id) => {
-        if (!confirm('A je e sigurt që do ta fshish këtë media?')) return;
+    const uploadWholeFolder = async (folderNameToCreate, files) => {
+        if (!folderNameToCreate || !files.length) return;
 
-        try {
-            await axios.delete(`/api/media/${id}`);
+        setUploadingFolder(true);
+        setUploadText(`Creating folder ${folderNameToCreate}...`);
 
-            setMedia((prev) => prev.filter((item) => item.id !== id));
-            setSelected((prev) => prev.filter((itemId) => itemId !== id));
-        } catch (error) {
-            console.error(error);
-            alert('Delete failed.');
+        const createdFolder = await createFolderByName(folderNameToCreate);
+
+        if (!createdFolder?.id) {
+            throw new Error('Folder could not be created.');
         }
+
+        await uploadFilesToFolder(createdFolder.id, files);
+
+        setUploadText('Upload complete.');
+
+        router.visit(
+            route('company.guests.folders.show', [guest.id, createdFolder.id]),
+            {
+                preserveScroll: true,
+                preserveState: false,
+            },
+        );
     };
 
-    const toggleVisibility = async (item) => {
-        try {
-            await axios.patch(`/api/media/${item.id}/visibility`, {
-                is_visible: !item.is_visible,
-            });
+    const handleFolderDrop = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
 
-            setMedia((prev) =>
-                prev.map((mediaItem) =>
-                    mediaItem.id === item.id
-                        ? { ...mediaItem, is_visible: !mediaItem.is_visible }
-                        : mediaItem,
-                ),
-            );
-        } catch (error) {
-            console.error(error);
-            alert('Visibility update failed.');
-        }
-    };
+        setDraggingFolder(false);
 
-    const deleteSelected = async () => {
-        if (!selected.length) return;
+        const items = Array.from(e.dataTransfer?.items || []);
 
-        if (!confirm(`A je e sigurt që do t'i fshish ${selected.length} media?`)) {
+        const folderEntry = items
+            .map((item) => item.webkitGetAsEntry?.())
+            .find((entry) => entry?.isDirectory);
+
+        if (!folderEntry) {
+            alert('Vendose një folder komplet, jo vetëm file.');
             return;
         }
 
         try {
-            await Promise.all(selected.map((id) => axios.delete(`/api/media/${id}`)));
+            setUploadingFolder(true);
+            setUploadText(`Reading ${folderEntry.name}...`);
 
-            setMedia((prev) => prev.filter((item) => !selected.includes(item.id)));
-            setSelected([]);
+            const files = await readAllFilesFromDirectory(folderEntry);
+
+            if (!files.length) {
+                alert('Ky folder nuk ka file brenda.');
+                return;
+            }
+
+            await uploadWholeFolder(folderEntry.name, files);
         } catch (error) {
             console.error(error);
-            alert('Multi delete failed.');
+
+            alert(
+                error.response?.data?.message ||
+                    error.message ||
+                    'Folder upload failed.',
+            );
+        } finally {
+            setTimeout(() => {
+                setUploadingFolder(false);
+                setUploadText('');
+            }, 800);
         }
     };
 
-    const downloadMedia = (id) => {
-        window.open(`/api/media/${id}/download`, '_blank');
+    const handleFolderInput = async (e) => {
+        const files = Array.from(e.target.files || []);
+
+        if (!files.length) return;
+
+        const folderNameFromInput = files[0].webkitRelativePath
+            ? files[0].webkitRelativePath.split('/')[0]
+            : 'New Folder';
+
+        try {
+            await uploadWholeFolder(folderNameFromInput, files);
+        } catch (error) {
+            console.error(error);
+
+            alert(
+                error.response?.data?.message ||
+                    error.message ||
+                    'Folder upload failed.',
+            );
+        } finally {
+            e.target.value = '';
+
+            setTimeout(() => {
+                setUploadingFolder(false);
+                setUploadText('');
+            }, 800);
+        }
     };
 
-    const toggleSelect = (id) => {
-        setSelected((prev) =>
-            prev.includes(id)
-                ? prev.filter((itemId) => itemId !== id)
-                : [...prev, id],
-        );
-    };
-
-    const getFolderName = (folderId) => {
-        const folder = folders.find(
-            (item) => String(item.id) === String(folderId),
-        );
-
-        return folder?.name || 'No folder';
+    const openFolder = (folder) => {
+        router.visit(route('company.guests.folders.show', [guest.id, folder.id]));
     };
 
     return (
-        <CompanyLayout title={`${guest.name} Media`}>
+        <CompanyLayout title={`${guest.name} Folders`}>
             <div className="space-y-8">
-                <div className="relative overflow-hidden rounded-[34px] border border-white/10 bg-[#07101F] p-8 text-white shadow-2xl">
+                <div className="relative overflow-hidden rounded-[34px] bg-[#07101F] p-8 text-white shadow-2xl">
                     <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-blue-500/20 blur-3xl" />
                     <div className="absolute -bottom-28 left-20 h-72 w-72 rounded-full bg-violet-500/20 blur-3xl" />
 
@@ -215,7 +256,7 @@ export default function Show({ guest, folders = [] }) {
                         <div>
                             <Link
                                 href={route('company.guests.index')}
-                                className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-slate-200 transition hover:bg-white/15"
+                                className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/15"
                             >
                                 <ArrowLeft size={16} />
                                 Back to guests
@@ -226,345 +267,219 @@ export default function Show({ guest, folders = [] }) {
                             </h1>
 
                             <p className="mt-3 max-w-2xl text-slate-300">
-                                Upload photos and videos for this guest. You can also assign uploads to folders.
+                                Drag a folder here and all files inside it will be uploaded.
                             </p>
                         </div>
 
-                        {selected.length > 0 && (
-                            <button
-                                type="button"
-                                onClick={deleteSelected}
-                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-500 px-6 py-4 text-sm font-black text-white transition hover:bg-rose-400"
-                            >
-                                <Trash2 size={18} />
-                                Delete Selected ({selected.length})
-                            </button>
-                        )}
-                    </div>
-                </div>
-
-                <div className="grid gap-6 md:grid-cols-4">
-                    {[
-                        ['Total Media', media.length],
-                        ['Photos', photosCount],
-                        ['Videos', videosCount],
-                        ['Folders', folders.length],
-                    ].map(([label, value]) => (
-                        <div
-                            key={label}
-                            className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm"
+                        <button
+                            type="button"
+                            onClick={() => setShowFolderModal(true)}
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-sm font-black text-slate-950 hover:bg-slate-100"
                         >
-                            <p className="text-sm font-bold text-slate-500">
-                                {label}
-                            </p>
-
-                            <h2 className="mt-3 text-4xl font-black text-slate-950">
-                                {value}
-                            </h2>
-                        </div>
-                    ))}
+                            <FolderPlus size={18} />
+                            Create Folder
+                        </button>
+                    </div>
                 </div>
 
                 <div
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
+                    onDragEnter={(e) => {
                         e.preventDefault();
-
-                        if (!uploading) {
-                            uploadFiles(e.dataTransfer.files);
-                        }
+                        e.stopPropagation();
+                        setDraggingFolder(true);
                     }}
-                    className={`overflow-hidden rounded-[34px] border border-dashed bg-white shadow-sm transition ${
-                        uploading
-                            ? 'border-blue-400 ring-4 ring-blue-100'
-                            : 'border-blue-300'
+                    onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDraggingFolder(true);
+                    }}
+                    onDragLeave={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        if (e.currentTarget.contains(e.relatedTarget)) return;
+
+                        setDraggingFolder(false);
+                    }}
+                    onDrop={handleFolderDrop}
+                    className={`rounded-[34px] border border-dashed p-8 text-center shadow-sm transition ${
+                        draggingFolder
+                            ? 'border-blue-500 bg-blue-50 ring-4 ring-blue-100'
+                            : uploadingFolder
+                              ? 'border-blue-400 bg-blue-50 ring-4 ring-blue-100'
+                              : 'border-blue-300 bg-white'
                     }`}
                 >
-                    <div className="grid gap-6 p-7 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
-                        <div className="flex items-start gap-5">
-                            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-3xl bg-blue-50 text-blue-600">
-                                <UploadCloud size={30} />
-                            </div>
-
-                            <div>
-                                <h2 className="text-2xl font-black text-slate-950">
-                                    Upload Media
-                                </h2>
-
-                                <p className="mt-2 text-sm leading-6 text-slate-500">
-                                    Drag & drop photos/videos here or select files manually. Choose a folder before upload if needed.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="mb-2 block text-sm font-black text-slate-700">
-                                    Upload to folder
-                                </label>
-
-                                <select
-                                    value={selectedFolderId}
-                                    disabled={uploading}
-                                    onChange={(e) =>
-                                        setSelectedFolderId(e.target.value)
-                                    }
-                                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    <option value="">No folder</option>
-
-                                    {folders.map((folder) => (
-                                        <option key={folder.id} value={folder.id}>
-                                            {folder.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <label
-                                className={`flex items-center justify-center gap-3 rounded-2xl px-6 py-4 text-sm font-black text-white transition ${
-                                    uploading
-                                        ? 'cursor-not-allowed bg-slate-400'
-                                        : 'cursor-pointer bg-slate-950 hover:bg-slate-800'
-                                }`}
-                            >
-                                <UploadCloud size={18} />
-                                {uploading ? 'Uploading...' : 'Select Files'}
-
-                                <input
-                                    type="file"
-                                    multiple
-                                    disabled={uploading}
-                                    accept="image/*,video/*"
-                                    className="hidden"
-                                    onChange={(e) => {
-                                        uploadFiles(e.target.files);
-                                        e.target.value = '';
-                                    }}
-                                />
-                            </label>
-                        </div>
+                    <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] bg-blue-50 text-blue-600">
+                        <UploadCloud size={38} />
                     </div>
 
-                    {uploading && (
-                        <div className="border-t border-slate-100 bg-slate-50 px-7 py-6">
-                            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                <div>
-                                    <p className="text-sm font-black text-slate-800">
-                                        {progress >= 100
-                                            ? 'Upload complete'
-                                            : 'Uploading media...'}
-                                    </p>
+                    <h2 className="mt-5 text-2xl font-black text-slate-950">
+                        Drag & Drop Folder Here
+                    </h2>
 
-                                    <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-                                        {uploadInfo}
-                                    </p>
-                                </div>
+                    {uploadingFolder && (
+                        <p className="mt-4 text-sm font-black text-blue-700">
+                            {uploadText}
+                        </p>
+                    )}
 
-                                <span className="text-2xl font-black text-blue-600">
-                                    {progress}%
-                                </span>
-                            </div>
+                    <label
+                        className={`mx-auto mt-6 inline-flex items-center justify-center gap-3 rounded-2xl px-8 py-4 text-sm font-black text-white ${
+                            uploadingFolder
+                                ? 'cursor-not-allowed bg-slate-400'
+                                : 'cursor-pointer bg-slate-950 hover:bg-slate-800'
+                        }`}
+                    >
+                        <FolderPlus size={18} />
+                        Select Folder
 
-                            <div className="h-4 overflow-hidden rounded-full bg-slate-200">
-                                <div
-                                    className="h-full rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500 transition-all duration-300"
-                                    style={{ width: `${progress}%` }}
-                                />
-                            </div>
+                        <input
+                            type="file"
+                            className="hidden"
+                            webkitdirectory=""
+                            directory=""
+                            multiple
+                            disabled={uploadingFolder}
+                            onChange={handleFolderInput}
+                        />
+                    </label>
+                </div>
 
-                            <p className="mt-3 text-xs font-semibold text-slate-500">
-                                Please wait until the upload finishes. Do not refresh the page.
+                <div className="grid gap-6 md:grid-cols-3">
+                    <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+                        <p className="text-sm font-bold text-slate-500">Guest</p>
+                        <h2 className="mt-3 truncate text-3xl font-black text-slate-950">
+                            {guest.name}
+                        </h2>
+                    </div>
+
+                    <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+                        <p className="text-sm font-bold text-slate-500">Folders</p>
+                        <h2 className="mt-3 text-4xl font-black text-slate-950">
+                            {localFolders.length}
+                        </h2>
+                    </div>
+
+                    <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+                        <p className="text-sm font-bold text-slate-500">Total Files</p>
+                        <h2 className="mt-3 text-4xl font-black text-slate-950">
+                            {localFolders.reduce(
+                                (total, folder) =>
+                                    total + Number(folder.media_count || 0),
+                                0,
+                            )}
+                        </h2>
+                    </div>
+                </div>
+
+                <div className="rounded-[34px] border border-slate-200 bg-white p-7 shadow-sm">
+                    <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h2 className="text-2xl font-black text-slate-950">
+                                Guest Folders
+                            </h2>
+
+                            <p className="mt-1 text-sm text-slate-500">
+                                Click a folder to open it and upload files inside.
                             </p>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => setShowFolderModal(true)}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800"
+                        >
+                            <FolderPlus size={17} />
+                            New Folder
+                        </button>
+                    </div>
+
+                    {localFolders.length === 0 ? (
+                        <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50 p-12 text-center">
+                            <Folder className="mx-auto text-slate-300" size={64} />
+
+                            <h3 className="mt-4 text-2xl font-black text-slate-950">
+                                No folders yet
+                            </h3>
+
+                            <p className="mt-2 text-slate-500">
+                                Drag a folder above or create the first folder manually.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {localFolders.map((folder) => (
+                                <button
+                                    key={folder.id}
+                                    type="button"
+                                    onClick={() => openFolder(folder)}
+                                    className="group rounded-[28px] border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:border-blue-300 hover:shadow-xl"
+                                >
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-500 to-violet-600 text-white shadow-lg">
+                                            <FolderOpen size={30} />
+                                        </div>
+
+                                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                                            {folder.media_count || 0} files
+                                        </span>
+                                    </div>
+
+                                    <h3 className="mt-5 truncate text-xl font-black text-slate-950">
+                                        {folder.name}
+                                    </h3>
+
+                                    <p className="mt-2 text-sm font-semibold text-slate-500">
+                                        Open folder
+                                    </p>
+                                </button>
+                            ))}
                         </div>
                     )}
                 </div>
 
-                <div className="flex flex-col gap-4 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
-                    <div>
-                        <h2 className="text-lg font-black text-slate-950">
-                            Media Gallery
-                        </h2>
-
-                        <p className="mt-1 text-sm text-slate-500">
-                            Filter media by folder and manage visibility.
-                        </p>
-                    </div>
-
-                    <select
-                        value={filterFolderId}
-                        onChange={(e) => setFilterFolderId(e.target.value)}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-                    >
-                        <option value="all">All folders</option>
-                        <option value="no-folder">No folder</option>
-
-                        {folders.map((folder) => (
-                            <option key={folder.id} value={folder.id}>
-                                {folder.name}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                {loading ? (
-                    <div className="rounded-[30px] border border-slate-200 bg-white p-8 text-slate-500 shadow-sm">
-                        Loading media...
-                    </div>
-                ) : filteredMedia.length === 0 ? (
-                    <div className="rounded-[30px] border border-slate-200 bg-white p-12 text-center shadow-sm">
-                        <Folder className="mx-auto text-slate-300" size={54} />
-
-                        <h3 className="mt-4 text-2xl font-black text-slate-950">
-                            No media found
-                        </h3>
-
-                        <p className="mt-2 text-slate-500">
-                            Upload media or choose another folder filter.
-                        </p>
-                    </div>
-                ) : (
-                    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                        {filteredMedia.map((item) => (
-                            <div
-                                key={item.id}
-                                className="group overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
-                            >
-                                <div className="relative aspect-[4/3] overflow-hidden bg-slate-950">
-                                    <input
-                                        type="checkbox"
-                                        checked={selected.includes(item.id)}
-                                        onChange={() => toggleSelect(item.id)}
-                                        className="absolute left-4 top-4 z-10 h-5 w-5 cursor-pointer accent-blue-600"
-                                    />
-
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleVisibility(item)}
-                                        className={`absolute right-4 top-4 z-10 inline-flex items-center gap-1 rounded-full px-3 py-2 text-xs font-black ${
-                                            item.is_visible
-                                                ? 'bg-emerald-500 text-white'
-                                                : 'bg-slate-800 text-white'
-                                        }`}
-                                    >
-                                        {item.is_visible ? (
-                                            <Eye size={14} />
-                                        ) : (
-                                            <EyeOff size={14} />
-                                        )}
-
-                                        {item.is_visible ? 'Visible' : 'Hidden'}
-                                    </button>
-
-                                    {item.file_type === 'photo' ? (
-                                        <img
-                                            src={getFileUrl(item)}
-                                            alt={item.original_name}
-                                            className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
-                                        />
-                                    ) : (
-                                        <video
-                                            src={getFileUrl(item)}
-                                            className="h-full w-full object-cover"
-                                        />
-                                    )}
-                                </div>
-
-                                <div className="p-5">
-                                    <div className="mb-4 flex items-center gap-2">
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
-                                            {item.file_type === 'photo' ? (
-                                                <Image size={13} />
-                                            ) : (
-                                                <Video size={13} />
-                                            )}
-
-                                            {item.file_type}
-                                        </span>
-
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
-                                            <Folder size={13} />
-                                            {getFolderName(item.folder_id)}
-                                        </span>
-                                    </div>
-
-                                    <h3 className="truncate font-black text-slate-950">
-                                        {item.original_name}
-                                    </h3>
-
-                                    <p className="mt-1 text-sm text-slate-500">
-                                        {item.is_visible
-                                            ? 'Guest can view this media'
-                                            : 'Private media'}
-                                    </p>
-
-                                    <div className="mt-5 grid grid-cols-3 gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setPreview(item)}
-                                            className="rounded-xl bg-blue-50 px-3 py-3 text-sm font-black text-blue-700 transition hover:bg-blue-100"
-                                        >
-                                            Preview
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => downloadMedia(item.id)}
-                                            className="inline-flex items-center justify-center rounded-xl bg-slate-100 px-3 py-3 text-slate-700 transition hover:bg-slate-200"
-                                        >
-                                            <Download size={17} />
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => deleteMedia(item.id)}
-                                            className="inline-flex items-center justify-center rounded-xl bg-rose-50 px-3 py-3 text-rose-700 transition hover:bg-rose-100"
-                                        >
-                                            <Trash2 size={17} />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {preview && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm">
-                        <div className="relative w-full max-w-6xl rounded-[30px] bg-white p-4 shadow-2xl">
-                            <button
-                                type="button"
-                                onClick={() => setPreview(null)}
-                                className="absolute right-5 top-5 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-slate-950 text-white"
-                            >
-                                <X size={20} />
-                            </button>
-
-                            <div className="mb-4 pr-16">
-                                <h2 className="truncate text-xl font-black text-slate-950">
-                                    {preview.original_name}
+                {showFolderModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
+                        <form
+                            onSubmit={createFolder}
+                            className="w-full max-w-md rounded-[30px] bg-white p-7 shadow-2xl"
+                        >
+                            <div className="mb-6 flex items-center justify-between">
+                                <h2 className="text-2xl font-black text-slate-950">
+                                    Create Folder
                                 </h2>
 
-                                <p className="mt-1 text-sm font-semibold text-slate-500">
-                                    {preview.file_type} · {getFolderName(preview.folder_id)}
-                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowFolderModal(false)}
+                                    className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-700"
+                                >
+                                    <X size={18} />
+                                </button>
                             </div>
 
-                            {preview.file_type === 'video' ? (
-                                <video
-                                    src={getFileUrl(preview)}
-                                    controls
-                                    autoPlay
-                                    className="max-h-[75vh] w-full rounded-2xl object-contain"
-                                />
-                            ) : (
-                                <img
-                                    src={getFileUrl(preview)}
-                                    alt={preview.original_name}
-                                    className="max-h-[75vh] w-full rounded-2xl object-contain"
-                                />
-                            )}
-                        </div>
+                            <label className="mb-2 block text-sm font-black text-slate-700">
+                                Folder name
+                            </label>
+
+                            <input
+                                type="text"
+                                value={folderName}
+                                onChange={(e) => setFolderName(e.target.value)}
+                                placeholder="Example: Wedding Photos"
+                                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-800 outline-none focus:border-blue-400 focus:bg-white"
+                                autoFocus
+                            />
+
+                            <button
+                                type="submit"
+                                disabled={creatingFolder}
+                                className="mt-5 w-full rounded-2xl bg-slate-950 px-6 py-4 text-sm font-black text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                            >
+                                {creatingFolder ? 'Creating...' : 'Create Folder'}
+                            </button>
+                        </form>
                     </div>
                 )}
             </div>

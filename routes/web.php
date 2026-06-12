@@ -9,6 +9,7 @@ use App\Http\Controllers\Company\FolderController as CompanyFolderController;
 use App\Http\Controllers\Company\GuestController;
 use App\Http\Controllers\Company\MediaController as CompanyMediaController;
 use App\Http\Controllers\Guest\DashboardController as GuestDashboardController;
+use App\Http\Controllers\Guest\FolderController as GuestFolderController;
 use App\Http\Controllers\ProfileController;
 use App\Models\Media;
 use App\Models\User;
@@ -87,46 +88,55 @@ Route::middleware(['auth'])->group(function () {
         });
 
     Route::middleware(['role:company'])
-    ->prefix('company')
-    ->name('company.')
-    ->group(function () {
-        Route::get('/dashboard', function () {
-            $companyId = auth()->id();
+        ->prefix('company')
+        ->name('company.')
+        ->group(function () {
+            Route::get('/dashboard', function () {
+                $companyId = auth()->id();
 
-            $guests = User::where('role', 'guest')
-                ->where('company_id', $companyId)
-                ->latest()
-                ->get();
+                $guests = User::where('role', 'guest')
+                    ->where('company_id', $companyId)
+                    ->latest()
+                    ->get();
 
-            $mediaQuery = Media::where('company_id', $companyId);
+                $mediaQuery = Media::where('company_id', $companyId);
 
-            return Inertia::render('Company/Dashboard', [
-                'guests' => $guests,
-                'mediaCount' => (clone $mediaQuery)->count(),
-                'photosCount' => (clone $mediaQuery)->where('file_type', 'photo')->count(),
-                'videosCount' => (clone $mediaQuery)->where('file_type', 'video')->count(),
-            ]);
-        })->name('dashboard');
+                return Inertia::render('Company/Dashboard', [
+                    'guests' => $guests,
+                    'mediaCount' => (clone $mediaQuery)->count(),
+                    'photosCount' => (clone $mediaQuery)->where('file_type', 'photo')->count(),
+                    'videosCount' => (clone $mediaQuery)->where('file_type', 'video')->count(),
+                ]);
+            })->name('dashboard');
 
-        Route::resource('guests', GuestController::class);
+            Route::resource('guests', GuestController::class);
 
-        Route::resource('folders', CompanyFolderController::class);
+            Route::post('/guests/{guest}/folders', [GuestController::class, 'storeFolder'])
+                ->name('guests.folders.store');
 
-        Route::get('/media', [CompanyMediaController::class, 'index'])
-            ->name('media.index');
+            Route::get('/guests/{guest}/folders/{folder}', [GuestController::class, 'showFolder'])
+                ->name('guests.folders.show');
 
-        Route::post('/media', [CompanyMediaController::class, 'store'])
-            ->name('media.store');
+            Route::resource('folders', CompanyFolderController::class);
 
-        Route::patch('/media/{media}/visibility', [CompanyMediaController::class, 'toggleVisibility'])
-            ->name('media.visibility');
+            Route::get('/media', [CompanyMediaController::class, 'index'])
+                ->name('media.index');
 
-        Route::delete('/media/{media}', [CompanyMediaController::class, 'destroy'])
-            ->name('media.destroy');
+            Route::post('/media', [CompanyMediaController::class, 'store'])
+                ->name('media.store');
 
-        Route::post('/media/{media}/delete', [CompanyMediaController::class, 'destroyByPost'])
-            ->name('media.destroy.post');
-    });
+            Route::post('/media/upload', [CompanyMediaController::class, 'store'])
+                ->name('media.upload');
+
+            Route::patch('/media/{media}/visibility', [CompanyMediaController::class, 'toggleVisibility'])
+                ->name('media.visibility');
+
+            Route::delete('/media/{media}', [CompanyMediaController::class, 'destroy'])
+                ->name('media.destroy');
+
+            Route::post('/media/{media}/delete', [CompanyMediaController::class, 'destroyByPost'])
+                ->name('media.destroy.post');
+        });
 
     Route::middleware(['role:guest'])
         ->prefix('guest')
@@ -134,6 +144,18 @@ Route::middleware(['auth'])->group(function () {
         ->group(function () {
             Route::get('/dashboard', [GuestDashboardController::class, 'index'])
                 ->name('dashboard');
+
+            Route::get('/folders/download-all', [GuestFolderController::class, 'downloadAllFolders'])
+                ->name('folders.downloadAll');
+
+            Route::get('/folders/{folder}/download', [GuestFolderController::class, 'downloadFolder'])
+                ->name('folders.download');
+
+            Route::get('/folders', [GuestFolderController::class, 'index'])
+                ->name('folders.index');
+
+            Route::get('/folders/{folder}', [GuestFolderController::class, 'show'])
+                ->name('folders.show');
 
             Route::get('/media/download-all', [GuestDashboardController::class, 'downloadAll'])
                 ->name('media.downloadAll');

@@ -14,7 +14,6 @@ export default function CompanyLayout({
     const menu = [
         { label: 'Dashboard', href: '/company/dashboard' },
         { label: 'Guests', href: '/company/guests' },
-        { label: 'Folders', href: '/company/folders' },
         { label: 'Media Files', href: '/company/media' },
     ];
 
@@ -138,7 +137,7 @@ export default function CompanyLayout({
                             </h2>
 
                             <p className="mt-1 hidden text-sm text-slate-500 sm:block">
-                                Manage guests, folders and media files from one place.
+                                Manage guests and media files from one place.
                             </p>
                         </div>
                     </div>
@@ -160,7 +159,9 @@ export default function CompanyLayout({
                     </div>
                 </header>
 
-                <section className="p-4 sm:p-6 lg:p-8">{children}</section>
+                <section className="p-4 sm:p-6 lg:p-8">
+                    {children}
+                </section>
             </main>
         </div>
     );

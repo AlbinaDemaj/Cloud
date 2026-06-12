@@ -8,6 +8,8 @@ use App\Models\Media;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 class FolderController extends Controller
@@ -55,37 +57,103 @@ class FolderController extends Controller
 
     public function store(Request $request)
     {
+        set_time_limit(0);
+        ini_set('memory_limit', '-1');
+
         $validated = $request->validate([
             'guest_id' => ['required', 'exists:users,id'],
             'parent_id' => ['nullable', 'exists:folders,id'],
             'name' => ['required', 'string', 'max:255'],
+            'files' => ['nullable', 'array'],
+            'files.*' => [
+                'file',
+                'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi',
+            ],
         ]);
+
+        $company = Auth::user();
+        $companyId = $this->companyId();
 
         $guest = User::where('id', $validated['guest_id'])
             ->where('role', 'guest')
-            ->where('company_id', $this->companyId())
+            ->where('company_id', $companyId)
             ->firstOrFail();
 
         $parentId = $validated['parent_id'] ?? null;
 
         if ($parentId) {
             Folder::where('id', $parentId)
-                ->where('company_id', $this->companyId())
+                ->where('company_id', $companyId)
                 ->where('guest_id', $guest->id)
                 ->firstOrFail();
         }
 
-        Folder::create([
-            'company_id' => $this->companyId(),
+        $folder = Folder::create([
+            'company_id' => $companyId,
             'guest_id' => $guest->id,
             'parent_id' => $parentId,
             'name' => $validated['name'],
             'is_active' => true,
         ]);
 
+        $files = $request->file('files', []);
+
+        if (! empty($files)) {
+            $companyFolder = $company->id . '-' . Str::slug($company->name ?: 'company');
+            $guestFolder = $guest->id . '-' . Str::slug($guest->name ?: 'guest');
+            $systemFolder = $folder->id . '-' . Str::slug($folder->name ?: 'folder');
+
+            $directory = "uploads/media/{$companyFolder}/{$guestFolder}/{$systemFolder}";
+            $publicPath = public_path($directory);
+
+            if (! File::exists($publicPath)) {
+                File::makeDirectory($publicPath, 0775, true);
+            }
+
+            $mediaRows = [];
+            $now = now();
+
+            foreach ($files as $file) {
+                if (! $file->isValid()) {
+                    continue;
+                }
+
+                $mime = $file->getMimeType();
+                $type = str_starts_with($mime, 'video/') ? 'video' : 'photo';
+                $fileSize = $file->getSize() ?? 0;
+                $originalName = $file->getClientOriginalName();
+                $extension = $file->getClientOriginalExtension() ?: $file->guessExtension() ?: 'file';
+
+                $filename = Str::uuid()->toString() . '_' . time() . '.' . $extension;
+
+                $file->move($publicPath, $filename);
+
+                $mediaRows[] = [
+                    'company_id' => $companyId,
+                    'guest_id' => $guest->id,
+                    'folder_id' => $folder->id,
+                    'file_type' => $type,
+                    'original_name' => $originalName,
+                    'file_path' => $directory . '/' . $filename,
+                    'thumbnail_path' => null,
+                    'file_size' => $fileSize,
+                    'mime_type' => $mime,
+                    'is_visible' => true,
+                    'uploaded_by' => Auth::id(),
+                    'uploaded_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+
+            foreach (array_chunk($mediaRows, 500) as $chunk) {
+                Media::insert($chunk);
+            }
+        }
+
         return redirect()
             ->route('company.folders.index')
-            ->with('success', 'Folder u krijua me sukses.');
+            ->with('success', 'Folder u krijua dhe mediat u uploaduan me sukses.');
     }
 
     public function show(Folder $folder)

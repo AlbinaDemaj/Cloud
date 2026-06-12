@@ -14,8 +14,8 @@ use Inertia\Inertia;
 
 class MediaController extends Controller
 {
-    private const GUEST_STORAGE_LIMIT_BYTES = 30 * 1024 * 1024 * 1024; // 30GB
-    private const MAX_FILE_UPLOAD_KB = 31457280; // 30GB në KB për Laravel validation
+    private const GUEST_STORAGE_LIMIT_BYTES = 30 * 1024 * 1024 * 1024;
+    private const MAX_FILE_UPLOAD_KB = 31457280;
 
     private function companyId(): int
     {
@@ -26,10 +26,7 @@ class MediaController extends Controller
     {
         $media = Media::query()
             ->where('company_id', $this->companyId())
-            ->with([
-                'guest:id,name,username,email',
-                'folder:id,name',
-            ])
+            ->with(['guest:id,name,username,email', 'folder:id,name'])
             ->when($request->filled('guest_id'), fn ($query) =>
                 $query->where('guest_id', $request->guest_id)
             )
@@ -74,7 +71,7 @@ class MediaController extends Controller
             'files.*' => [
                 'required',
                 'file',
-                'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi',
+                'mimes:jpg,jpeg,png,webp,gif,heic,heif,mp4,mov,avi,mkv,webm',
                 'max:' . self::MAX_FILE_UPLOAD_KB,
             ],
         ]);
@@ -87,6 +84,7 @@ class MediaController extends Controller
             ->where('company_id', $this->companyId())
             ->firstOrFail();
 
+        $folder = null;
         $folderId = null;
 
         if (!empty($validated['folder_id'])) {
@@ -109,41 +107,45 @@ class MediaController extends Controller
             ->where('guest_id', $guest->id)
             ->sum('file_size');
 
-        $newUploadBytes = collect($files)->sum(function ($file) {
-            return (int) $file->getSize();
-        });
+        $newUploadBytes = collect($files)->sum(fn ($file) => (int) $file->getSize());
 
         if (($currentUsedBytes + $newUploadBytes) > self::GUEST_STORAGE_LIMIT_BYTES) {
-            $usedGb = round($currentUsedBytes / 1024 / 1024 / 1024, 2);
-            $newGb = round($newUploadBytes / 1024 / 1024 / 1024, 2);
-
-            return back()->withErrors([
-                'files' => "Ky guest ka limit maksimal 30GB. Aktualisht ka përdorur {$usedGb}GB dhe po tenton të ngarkojë edhe {$newGb}GB.",
-            ]);
+            return response()->json([
+                'message' => 'Ky guest ka limit maksimal 30GB.',
+            ], 422);
         }
 
         $companyFolder = $company->id . '-' . Str::slug($company->name ?: 'company');
         $guestFolder = $guest->id . '-' . Str::slug($guest->name ?: 'guest');
 
+        $folderFolder = $folder
+            ? $folder->id . '-' . Str::slug($folder->name ?: 'folder')
+            : 'no-folder';
+
+        $directory = "uploads/media/{$companyFolder}/{$guestFolder}/{$folderFolder}";
+        $publicPath = public_path($directory);
+
+        if (!File::exists($publicPath)) {
+            File::makeDirectory($publicPath, 0775, true);
+        }
+
+        $uploadedMedia = [];
+
         foreach ($files as $file) {
             $mime = $file->getMimeType();
             $fileSize = $file->getSize();
             $originalName = $file->getClientOriginalName();
-            $extension = $file->getClientOriginalExtension();
+            $extension = strtolower($file->getClientOriginalExtension());
             $type = str_starts_with($mime, 'video/') ? 'video' : 'photo';
 
-            $directory = "uploads/media/{$companyFolder}/{$guestFolder}";
-            $publicPath = public_path($directory);
+            $safeOriginalName = pathinfo($originalName, PATHINFO_FILENAME);
+            $safeOriginalName = Str::slug($safeOriginalName) ?: 'media';
 
-            if (!File::exists($publicPath)) {
-                File::makeDirectory($publicPath, 0775, true);
-            }
-
-            $filename = uniqid('', true) . '_' . time() . '.' . $extension;
+            $filename = now()->format('YmdHis') . '_' . uniqid() . '_' . $safeOriginalName . '.' . $extension;
 
             $file->move($publicPath, $filename);
 
-            Media::create([
+            $media = Media::create([
                 'company_id' => $this->companyId(),
                 'guest_id' => $guest->id,
                 'folder_id' => $folderId,
@@ -157,9 +159,17 @@ class MediaController extends Controller
                 'uploaded_by' => Auth::id(),
                 'uploaded_at' => now(),
             ]);
+
+            $uploadedMedia[] = $media->fresh(['guest:id,name,username,email', 'folder:id,name']);
         }
 
-        return back()->with('success', 'Media u uploadua me sukses.');
+        return response()->json([
+            'message' => 'Media u uploadua me sukses.',
+            'media' => $uploadedMedia,
+            'folder' => $folderId
+                ? Folder::withCount('media')->find($folderId)
+                : null,
+        ]);
     }
 
     public function toggleVisibility(Media $media)
@@ -170,7 +180,10 @@ class MediaController extends Controller
             'is_visible' => ! $media->is_visible,
         ]);
 
-        return back()->with('success', 'Visibility u ndryshua me sukses.');
+        return response()->json([
+            'message' => 'Visibility u ndryshua me sukses.',
+            'media' => $media->fresh(['guest:id,name,username,email', 'folder:id,name']),
+        ]);
     }
 
     public function destroy(Media $media)
@@ -197,14 +210,13 @@ class MediaController extends Controller
 
         $media->delete();
 
-        return back()->with('success', 'Media u fshi me sukses.');
+        return response()->json([
+            'message' => 'Media u fshi me sukses.',
+        ]);
     }
 
     private function authorizeMedia(Media $media): void
     {
-        abort_if(
-            (int) $media->company_id !== $this->companyId(),
-            403
-        );
+        abort_if((int) $media->company_id !== $this->companyId(), 403);
     }
 }
