@@ -1,5 +1,6 @@
 import CompanyLayout from "@/Layouts/CompanyLayout";
 import { router, useForm } from "@inertiajs/react";
+import axios from "axios";
 import {
     Upload,
     Trash2,
@@ -19,6 +20,8 @@ export default function Index({
     filters = {},
 }) {
     const [preview, setPreview] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
 
     const uploadForm = useForm({
         guest_id: "",
@@ -32,7 +35,10 @@ export default function Index({
         type: filters.type || "",
     });
 
-    const uploadPercentage = uploadForm.progress?.percentage || 0;
+    const isUploading = uploading || uploadForm.processing;
+    const uploadPercentage = uploading
+        ? uploadProgress
+        : uploadForm.progress?.percentage || 0;
 
     const filteredFolders = folders.filter((folder) => {
         if (!uploadForm.data.guest_id) return true;
@@ -57,22 +63,68 @@ export default function Index({
         router.get(route("company.media.index"));
     };
 
-    const uploadMedia = (e) => {
+    const uploadMedia = async (e) => {
         e.preventDefault();
 
-        uploadForm.post(route("company.media.store"), {
-            forceFormData: true,
-            preserveScroll: true,
-            onSuccess: () => {
-                uploadForm.reset("files", "folder_id");
-            },
-        });
+        const selectedFiles = Array.from(uploadForm.data.files || []);
+
+        if (!uploadForm.data.guest_id) {
+            alert("Zgjidh guest fillimisht.");
+            return;
+        }
+
+        if (!selectedFiles.length || uploading) return;
+
+        try {
+            setUploading(true);
+            setUploadProgress(0);
+
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+
+                const formData = new FormData();
+
+                formData.append("guest_id", uploadForm.data.guest_id);
+                formData.append("folder_id", uploadForm.data.folder_id || "");
+                formData.append("files[]", file);
+
+                await axios.post(route("company.media.upload"), formData, {
+                    headers: {
+                        "Content-Type": "multipart/form-data",
+                        Accept: "application/json",
+                    },
+                });
+
+                setUploadProgress(
+                    Math.round(((i + 1) * 100) / selectedFiles.length),
+                );
+            }
+
+            uploadForm.reset("files", "folder_id");
+            router.reload({ only: ["media"] });
+        } catch (error) {
+            console.error(error);
+
+            alert(
+                error.response?.data?.message ||
+                    "Upload failed. Kontrollo file-in ose backend-in.",
+            );
+        } finally {
+            setTimeout(() => {
+                setUploading(false);
+                setUploadProgress(0);
+            }, 700);
+        }
     };
 
     const toggleVisibility = (id) => {
-        router.patch(route("company.media.visibility", { media: id }), {}, {
-            preserveScroll: true,
-        });
+        router.patch(
+            route("company.media.visibility", { media: id }),
+            {},
+            {
+                preserveScroll: true,
+            },
+        );
     };
 
     const deleteMedia = (id) => {
@@ -80,10 +132,14 @@ export default function Index({
             return;
         }
 
-        router.post(route("company.media.destroy.post", { media: id }), {}, {
-            preserveScroll: true,
-            preserveState: false,
-        });
+        router.post(
+            route("company.media.destroy.post", { media: id }),
+            {},
+            {
+                preserveScroll: true,
+                preserveState: false,
+            },
+        );
     };
 
     const fileUrl = (item) => {
@@ -178,7 +234,7 @@ export default function Index({
 
                                 <select
                                     value={uploadForm.data.guest_id}
-                                    disabled={uploadForm.processing}
+                                    disabled={isUploading}
                                     onChange={(e) => {
                                         uploadForm.setData("guest_id", e.target.value);
                                         uploadForm.setData("folder_id", "");
@@ -208,7 +264,7 @@ export default function Index({
 
                                 <select
                                     value={uploadForm.data.folder_id}
-                                    disabled={uploadForm.processing}
+                                    disabled={isUploading}
                                     onChange={(e) =>
                                         uploadForm.setData("folder_id", e.target.value)
                                     }
@@ -236,7 +292,7 @@ export default function Index({
 
                                 <label
                                     className={`flex flex-col items-center justify-center rounded-3xl border-2 border-dashed px-5 py-10 text-center transition ${
-                                        uploadForm.processing
+                                        isUploading
                                             ? "cursor-not-allowed border-slate-200 bg-slate-100 opacity-70"
                                             : "cursor-pointer border-slate-300 bg-slate-50 hover:border-[#7B61FF] hover:bg-[#7B61FF]/5"
                                     }`}
@@ -244,7 +300,7 @@ export default function Index({
                                     <Upload size={34} className="mb-3 text-[#7B61FF]" />
 
                                     <span className="text-sm font-bold text-slate-800">
-                                        {uploadForm.processing
+                                        {isUploading
                                             ? "Uploading files..."
                                             : "Click to select files"}
                                     </span>
@@ -256,7 +312,7 @@ export default function Index({
                                     <input
                                         type="file"
                                         multiple
-                                        disabled={uploadForm.processing}
+                                        disabled={isUploading}
                                         accept="image/*,video/*"
                                         className="hidden"
                                         onChange={(e) =>
@@ -281,7 +337,7 @@ export default function Index({
                                 )}
                             </div>
 
-                            {uploadForm.processing && (
+                            {isUploading && (
                                 <div className="rounded-2xl border border-[#7B61FF]/10 bg-[#7B61FF]/5 p-4">
                                     <div className="mb-2 flex items-center justify-between">
                                         <span className="text-sm font-black text-slate-700">
@@ -310,11 +366,11 @@ export default function Index({
 
                             <button
                                 type="submit"
-                                disabled={uploadForm.processing}
+                                disabled={isUploading}
                                 className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#7B61FF] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-[#7B61FF]/25 transition hover:bg-[#6A4DFF] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 <Upload size={18} />
-                                {uploadForm.processing
+                                {isUploading
                                     ? `Uploading... ${uploadPercentage}%`
                                     : "Upload Media"}
                             </button>

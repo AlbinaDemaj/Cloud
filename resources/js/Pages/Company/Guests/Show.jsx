@@ -115,31 +115,26 @@ export default function Show({ guest, folders = [] }) {
 
         if (!folderId || selectedFiles.length === 0) return;
 
-        const chunkSize = 20;
+        for (let i = 0; i < selectedFiles.length; i++) {
+    const file = selectedFiles[i];
 
-        for (let i = 0; i < selectedFiles.length; i += chunkSize) {
-            const chunk = selectedFiles.slice(i, i + chunkSize);
+    setUploadText(
+        `Uploading ${i + 1} / ${selectedFiles.length} files...`,
+    );
 
-            setUploadText(
-                `Uploading ${Math.min(i + chunk.length, selectedFiles.length)} / ${selectedFiles.length} files...`,
-            );
+    const formData = new FormData();
 
-            const formData = new FormData();
+    formData.append('guest_id', guest.id);
+    formData.append('folder_id', folderId);
+    formData.append('files[]', file);
 
-            formData.append('guest_id', guest.id);
-            formData.append('folder_id', folderId);
-
-            chunk.forEach((file) => {
-                formData.append('files[]', file);
-            });
-
-           await axios.post(route('company.media.upload'), formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                    Accept: 'application/json',
-                },
-            });
-        }
+    await axios.post(route('company.media.upload'), formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+            Accept: 'application/json',
+        },
+    });
+}
     };
 
     const uploadWholeFolder = async (folderNameToCreate, files) => {

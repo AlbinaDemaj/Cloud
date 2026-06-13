@@ -61,22 +61,25 @@ export default function FolderShow({ guest, folder, media: initialMedia = [] }) 
     );
 
     const uploadFiles = async (files) => {
-        const selectedFiles = Array.from(files || []);
+    const selectedFiles = Array.from(files || []);
 
-        if (!selectedFiles.length || uploading) return;
+    if (!selectedFiles.length || uploading) return;
 
-        const formData = new FormData();
+    try {
+        setUploading(true);
+        setDragging(false);
+        setProgress(0);
 
-        formData.append('guest_id', guest.id);
-        formData.append('folder_id', folder.id);
+        const uploadedAll = [];
 
-        selectedFiles.forEach((file) => {
+        for (let i = 0; i < selectedFiles.length; i++) {
+            const file = selectedFiles[i];
+
+            const formData = new FormData();
+
+            formData.append('guest_id', guest.id);
+            formData.append('folder_id', folder.id);
             formData.append('files[]', file);
-        });
-
-        try {
-            setUploading(true);
-            setProgress(0);
 
             const response = await axios.post(
                 route('company.media.upload'),
@@ -86,36 +89,36 @@ export default function FolderShow({ guest, folder, media: initialMedia = [] }) 
                         'Content-Type': 'multipart/form-data',
                         Accept: 'application/json',
                     },
-                    onUploadProgress: (event) => {
-                        if (!event.total) return;
-
-                        setProgress(Math.round((event.loaded * 100) / event.total));
-                    },
                 },
             );
 
             const uploadedMedia = response.data?.media || [];
 
-            if (uploadedMedia.length > 0) {
-                setMedia((prev) => [...uploadedMedia, ...prev]);
-            } else {
-                router.reload({ only: ['media'] });
-            }
-        } catch (error) {
-            console.error(error);
+            uploadedAll.push(...uploadedMedia);
 
-            alert(
-                error.response?.data?.message ||
-                    'Upload failed. Kontrollo file-in ose backend-in.',
-            );
-        } finally {
-            setTimeout(() => {
-                setUploading(false);
-                setDragging(false);
-                setProgress(0);
-            }, 700);
+            setProgress(Math.round(((i + 1) * 100) / selectedFiles.length));
         }
-    };
+
+        if (uploadedAll.length > 0) {
+            setMedia((prev) => [...uploadedAll.reverse(), ...prev]);
+        } else {
+            router.reload({ only: ['media'] });
+        }
+    } catch (error) {
+        console.error(error);
+
+        alert(
+            error.response?.data?.message ||
+                'Upload failed. Kontrollo file-in ose backend-in.',
+        );
+    } finally {
+        setTimeout(() => {
+            setUploading(false);
+            setDragging(false);
+            setProgress(0);
+        }, 700);
+    }
+};
 
     const deleteMedia = async (id) => {
         if (!confirm('A je e sigurt që do ta fshish këtë file?')) return;
