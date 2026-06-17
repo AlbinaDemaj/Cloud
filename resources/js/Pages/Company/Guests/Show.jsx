@@ -24,6 +24,31 @@ export default function Show({ guest, folders = [] }) {
         setLocalFolders(folders || []);
     }, [folders]);
 
+    const allowedExtensions = [
+        'jpg',
+        'jpeg',
+        'png',
+        'webp',
+        'gif',
+        'heic',
+        'heif',
+        'mp4',
+        'mov',
+        'avi',
+        'mkv',
+        'webm',
+    ];
+
+    const isAllowedFile = (file) => {
+        const name = file?.name || '';
+
+        if (!name || name.startsWith('.')) return false;
+
+        const extension = name.split('.').pop()?.toLowerCase();
+
+        return allowedExtensions.includes(extension);
+    };
+
     const createFolderByName = async (name) => {
         const cleanName = name?.trim();
 
@@ -111,30 +136,49 @@ export default function Show({ guest, folders = [] }) {
     };
 
     const uploadFilesToFolder = async (folderId, files) => {
-        const selectedFiles = Array.from(files || []);
+        const selectedFiles = Array.from(files || []).filter(isAllowedFile);
 
-        if (!folderId || selectedFiles.length === 0) return;
+        if (!folderId || selectedFiles.length === 0) {
+            throw new Error('Ky folder nuk ka foto/video të lejuara për upload.');
+        }
+
+        let uploadedCount = 0;
+        let failedCount = 0;
 
         for (let i = 0; i < selectedFiles.length; i++) {
-    const file = selectedFiles[i];
+            const file = selectedFiles[i];
 
-    setUploadText(
-        `Uploading ${i + 1} / ${selectedFiles.length} files...`,
-    );
+            setUploadText(
+                `Uploading ${i + 1} / ${selectedFiles.length} files...`,
+            );
 
-    const formData = new FormData();
+            const formData = new FormData();
 
-    formData.append('guest_id', guest.id);
-    formData.append('folder_id', folderId);
-    formData.append('files[]', file);
+            formData.append('guest_id', guest.id);
+            formData.append('folder_id', folderId);
+            formData.append('files[]', file);
 
-    await axios.post(route('company.media.upload'), formData, {
-        headers: {
-            'Content-Type': 'multipart/form-data',
-            Accept: 'application/json',
-        },
-    });
-}
+            try {
+                await axios.post(route('company.media.upload'), formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                        Accept: 'application/json',
+                    },
+                    timeout: 0,
+                });
+
+                uploadedCount++;
+            } catch (error) {
+                console.error('Failed upload:', file.name, error);
+                failedCount++;
+            }
+        }
+
+        return {
+            uploadedCount,
+            failedCount,
+            totalCount: selectedFiles.length,
+        };
     };
 
     const uploadWholeFolder = async (folderNameToCreate, files) => {
@@ -149,9 +193,11 @@ export default function Show({ guest, folders = [] }) {
             throw new Error('Folder could not be created.');
         }
 
-        await uploadFilesToFolder(createdFolder.id, files);
+        const result = await uploadFilesToFolder(createdFolder.id, files);
 
-        setUploadText('Upload complete.');
+        setUploadText(
+            `Upload complete. Uploaded: ${result.uploadedCount}, Failed: ${result.failedCount}`,
+        );
 
         router.visit(
             route('company.guests.folders.show', [guest.id, createdFolder.id]),
@@ -203,7 +249,7 @@ export default function Show({ guest, folders = [] }) {
             setTimeout(() => {
                 setUploadingFolder(false);
                 setUploadText('');
-            }, 800);
+            }, 1200);
         }
     };
 
@@ -232,7 +278,7 @@ export default function Show({ guest, folders = [] }) {
             setTimeout(() => {
                 setUploadingFolder(false);
                 setUploadText('');
-            }, 800);
+            }, 1200);
         }
     };
 
