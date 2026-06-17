@@ -60,65 +60,176 @@ export default function FolderShow({ guest, folder, media: initialMedia = [] }) 
         [media],
     );
 
-    const uploadFiles = async (files) => {
-    const selectedFiles = Array.from(files || []);
+    const isAllowedFile = (file) => {
+        if (!file) return false;
 
-    if (!selectedFiles.length || uploading) return;
+        const allowedExtensions = [
+            'jpg',
+            'jpeg',
+            'png',
+            'webp',
+            'gif',
+            'heic',
+            'heif',
+            'mp4',
+            'mov',
+            'avi',
+            'mkv',
+            'webm',
+        ];
 
-    try {
-        setUploading(true);
-        setDragging(false);
-        setProgress(0);
+        const extension = file.name.split('.').pop()?.toLowerCase();
 
-        const uploadedAll = [];
-
-        for (let i = 0; i < selectedFiles.length; i++) {
-            const file = selectedFiles[i];
-
-            const formData = new FormData();
-
-            formData.append('guest_id', guest.id);
-            formData.append('folder_id', folder.id);
-            formData.append('files[]', file);
-
-            const response = await axios.post(
-                route('company.media.upload'),
-                formData,
-                {
-                    headers: {
-                        'Content-Type': 'multipart/form-data',
-                        Accept: 'application/json',
-                    },
-                },
-            );
-
-            const uploadedMedia = response.data?.media || [];
-
-            uploadedAll.push(...uploadedMedia);
-
-            setProgress(Math.round(((i + 1) * 100) / selectedFiles.length));
-        }
-
-        if (uploadedAll.length > 0) {
-            setMedia((prev) => [...uploadedAll.reverse(), ...prev]);
-        } else {
-            router.reload({ only: ['media'] });
-        }
-    } catch (error) {
-        console.error(error);
-
-        alert(
-            error.response?.data?.message ||
-                'Upload failed. Kontrollo file-in ose backend-in.',
+        return (
+            file.type.startsWith('image/') ||
+            file.type.startsWith('video/') ||
+            allowedExtensions.includes(extension)
         );
-    } finally {
-        setTimeout(() => {
-            setUploading(false);
+    };
+
+    const readDirectory = async (directoryEntry) => {
+        const reader = directoryEntry.createReader();
+        const entries = [];
+
+        const readEntries = () =>
+            new Promise((resolve, reject) => {
+                reader.readEntries(resolve, reject);
+            });
+
+        let batch = await readEntries();
+
+        while (batch.length > 0) {
+            entries.push(...batch);
+            batch = await readEntries();
+        }
+
+        const files = [];
+
+        for (const entry of entries) {
+            if (entry.isFile) {
+                const file = await new Promise((resolve, reject) => {
+                    entry.file(resolve, reject);
+                });
+
+                files.push(file);
+            }
+
+            if (entry.isDirectory) {
+                const nestedFiles = await readDirectory(entry);
+                files.push(...nestedFiles);
+            }
+        }
+
+        return files;
+    };
+
+    const getFilesFromDrop = async (event) => {
+        const items = Array.from(event.dataTransfer?.items || []);
+
+        if (!items.length) {
+            return Array.from(event.dataTransfer?.files || []);
+        }
+
+        const files = [];
+
+        for (const item of items) {
+            const entry = item.webkitGetAsEntry?.();
+
+            if (!entry) {
+                const file = item.getAsFile?.();
+
+                if (file) {
+                    files.push(file);
+                }
+
+                continue;
+            }
+
+            if (entry.isFile) {
+                const file = await new Promise((resolve, reject) => {
+                    entry.file(resolve, reject);
+                });
+
+                files.push(file);
+            }
+
+            if (entry.isDirectory) {
+                const directoryFiles = await readDirectory(entry);
+                files.push(...directoryFiles);
+            }
+        }
+
+        return files;
+    };
+
+    const uploadFiles = async (files) => {
+        const selectedFiles = Array.from(files || []).filter(isAllowedFile);
+
+        if (!selectedFiles.length || uploading) {
+            if (!selectedFiles.length) {
+                alert('Nuk u gjet asnjë foto/video për upload.');
+            }
+
+            return;
+        }
+
+        try {
+            setUploading(true);
             setDragging(false);
             setProgress(0);
-        }, 700);
-    }
-};
+
+            const uploadedAll = [];
+
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+
+                const formData = new FormData();
+
+                formData.append('guest_id', guest.id);
+                formData.append('folder_id', folder.id);
+                formData.append('files[]', file);
+
+                const response = await axios.post(
+                    route('company.media.upload'),
+                    formData,
+                    {
+                        headers: {
+                            'Content-Type': 'multipart/form-data',
+                            Accept: 'application/json',
+                        },
+                    },
+                );
+
+                const uploadedMedia = response.data?.media || [];
+
+                uploadedAll.push(...uploadedMedia);
+
+                setProgress(Math.round(((i + 1) * 100) / selectedFiles.length));
+            }
+
+            if (uploadedAll.length > 0) {
+                setMedia((prev) => [...uploadedAll.reverse(), ...prev]);
+            }
+
+            router.reload({
+                only: ['media', 'folder'],
+                preserveScroll: true,
+            });
+        } catch (error) {
+            console.error(error);
+
+            alert(
+                error.response?.data?.message ||
+                    'Upload failed. Kontrollo file-in ose backend-in.',
+            );
+        } finally {
+            setTimeout(() => {
+                setUploading(false);
+                setDragging(false);
+                setProgress(0);
+            }, 700);
+        }
+    };
 
     const deleteMedia = async (id) => {
         if (!confirm('A je e sigurt që do ta fshish këtë file?')) return;
@@ -226,10 +337,12 @@ export default function FolderShow({ guest, folder, media: initialMedia = [] }) 
                         e.preventDefault();
                         setDragging(false);
                     }}
-                    onDrop={(e) => {
+                    onDrop={async (e) => {
                         e.preventDefault();
                         setDragging(false);
-                        uploadFiles(e.dataTransfer.files);
+
+                        const droppedFiles = await getFilesFromDrop(e);
+                        uploadFiles(droppedFiles);
                     }}
                     className={`rounded-[32px] border border-dashed bg-white p-8 text-center shadow-sm transition ${
                         dragging
@@ -246,7 +359,7 @@ export default function FolderShow({ guest, folder, media: initialMedia = [] }) 
                     </h2>
 
                     <p className="mt-2 text-sm text-slate-500">
-                        Drag files here or select photos/videos manually.
+                        Drag files or full folders here. Files will be saved inside this folder.
                     </p>
 
                     <label
