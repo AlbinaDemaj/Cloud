@@ -49,6 +49,28 @@ export default function Show({ guest, folders = [] }) {
         return allowedExtensions.includes(extension);
     };
 
+    const getUploadErrorMessage = (error) => {
+        if (error.response?.status === 413) {
+            return 'File është shumë i madh për serverin. Duhet rritur limiti në Nginx/PHP.';
+        }
+
+        if (error.response?.status === 422) {
+            const errors = error.response?.data?.errors;
+
+            if (errors) {
+                return Object.values(errors).flat().join('\n');
+            }
+
+            return error.response?.data?.message || 'File nuk kaloi validimin.';
+        }
+
+        if (error.response?.data?.message) {
+            return error.response.data.message;
+        }
+
+        return error.message || 'Upload failed.';
+    };
+
     const createFolderByName = async (name) => {
         const cleanName = name?.trim();
 
@@ -144,13 +166,12 @@ export default function Show({ guest, folders = [] }) {
 
         let uploadedCount = 0;
         let failedCount = 0;
+        let firstErrorMessage = '';
 
         for (let i = 0; i < selectedFiles.length; i++) {
             const file = selectedFiles[i];
 
-            setUploadText(
-                `Uploading ${i + 1} / ${selectedFiles.length} files...`,
-            );
+            setUploadText(`Uploading ${i + 1} / ${selectedFiles.length} files...`);
 
             const formData = new FormData();
 
@@ -161,7 +182,6 @@ export default function Show({ guest, folders = [] }) {
             try {
                 await axios.post(route('company.media.upload'), formData, {
                     headers: {
-                        'Content-Type': 'multipart/form-data',
                         Accept: 'application/json',
                     },
                     timeout: 0,
@@ -169,7 +189,19 @@ export default function Show({ guest, folders = [] }) {
 
                 uploadedCount++;
             } catch (error) {
-                console.error('Failed upload:', file.name, error);
+                const message = getUploadErrorMessage(error);
+
+                console.error('Failed upload:', {
+                    file: file.name,
+                    status: error.response?.status,
+                    message: error.response?.data?.message,
+                    errors: error.response?.data?.errors,
+                });
+
+                if (!firstErrorMessage) {
+                    firstErrorMessage = message;
+                }
+
                 failedCount++;
             }
         }
@@ -178,6 +210,7 @@ export default function Show({ guest, folders = [] }) {
             uploadedCount,
             failedCount,
             totalCount: selectedFiles.length,
+            firstErrorMessage,
         };
     };
 
@@ -194,6 +227,25 @@ export default function Show({ guest, folders = [] }) {
         }
 
         const result = await uploadFilesToFolder(createdFolder.id, files);
+
+        if (result.uploadedCount === 0) {
+            throw new Error(
+                result.firstErrorMessage ||
+                    `Folderi u krijua, por asnjë file nuk u uploadua. Failed: ${result.failedCount}`,
+            );
+        }
+
+        setLocalFolders((prev) =>
+            prev.map((folder) =>
+                folder.id === createdFolder.id
+                    ? {
+                          ...folder,
+                          media_count:
+                              Number(folder.media_count || 0) + result.uploadedCount,
+                      }
+                    : folder,
+            ),
+        );
 
         setUploadText(
             `Upload complete. Uploaded: ${result.uploadedCount}, Failed: ${result.failedCount}`,
@@ -231,12 +283,19 @@ export default function Show({ guest, folders = [] }) {
 
             const files = await readAllFilesFromDirectory(folderEntry);
 
+            const allowedFiles = files.filter(isAllowedFile);
+
             if (!files.length) {
                 alert('Ky folder nuk ka file brenda.');
                 return;
             }
 
-            await uploadWholeFolder(folderEntry.name, files);
+            if (!allowedFiles.length) {
+                alert('Ky folder nuk ka foto/video të lejuara për upload.');
+                return;
+            }
+
+            await uploadWholeFolder(folderEntry.name, allowedFiles);
         } catch (error) {
             console.error(error);
 
@@ -262,8 +321,17 @@ export default function Show({ guest, folders = [] }) {
             ? files[0].webkitRelativePath.split('/')[0]
             : 'New Folder';
 
+        const allowedFiles = files.filter(isAllowedFile);
+
+        if (!allowedFiles.length) {
+            alert('Ky folder nuk ka foto/video të lejuara për upload.');
+            e.target.value = '';
+            return;
+        }
+
         try {
-            await uploadWholeFolder(folderNameFromInput, files);
+            setUploadingFolder(true);
+            await uploadWholeFolder(folderNameFromInput, allowedFiles);
         } catch (error) {
             console.error(error);
 
