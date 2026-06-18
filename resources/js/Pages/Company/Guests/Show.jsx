@@ -19,6 +19,11 @@ export default function Show({ guest, folders = [] }) {
     const [draggingFolder, setDraggingFolder] = useState(false);
     const [uploadingFolder, setUploadingFolder] = useState(false);
     const [uploadText, setUploadText] = useState('');
+    const [uploadProgress, setUploadProgress] = useState({
+        percent: 0,
+        uploadedBytes: 0,
+        totalBytes: 0,
+    });
 
     useEffect(() => {
         setLocalFolders(folders || []);
@@ -41,12 +46,31 @@ export default function Show({ guest, folders = [] }) {
 
     const isAllowedFile = (file) => {
         const name = file?.name || '';
-
         if (!name || name.startsWith('.')) return false;
 
         const extension = name.split('.').pop()?.toLowerCase();
-
         return allowedExtensions.includes(extension);
+    };
+
+    const formatBytes = (bytes) => {
+        if (!bytes) return '0 MB';
+
+        const mb = bytes / (1024 * 1024);
+
+        if (mb >= 1024) {
+            return `${(mb / 1024).toFixed(2)} GB`;
+        }
+
+        return `${mb.toFixed(2)} MB`;
+    };
+
+    const resetUploadProgress = () => {
+        setUploadText('');
+        setUploadProgress({
+            percent: 0,
+            uploadedBytes: 0,
+            totalBytes: 0,
+        });
     };
 
     const getUploadErrorMessage = (error) => {
@@ -106,7 +130,6 @@ export default function Show({ guest, folders = [] }) {
 
         try {
             setCreatingFolder(true);
-
             await createFolderByName(folderName);
 
             setFolderName('');
@@ -164,14 +187,28 @@ export default function Show({ guest, folders = [] }) {
             throw new Error('Ky folder nuk ka foto/video të lejuara për upload.');
         }
 
+        const totalBytes = selectedFiles.reduce(
+            (total, file) => total + Number(file.size || 0),
+            0,
+        );
+
+        setUploadProgress({
+            percent: 0,
+            uploadedBytes: 0,
+            totalBytes,
+        });
+
         let uploadedCount = 0;
         let failedCount = 0;
         let firstErrorMessage = '';
+        let completedBytes = 0;
 
         for (let i = 0; i < selectedFiles.length; i++) {
             const file = selectedFiles[i];
 
-            setUploadText(`Uploading ${i + 1} / ${selectedFiles.length} files...`);
+            setUploadText(
+                `Uploading ${i + 1} / ${selectedFiles.length} files... ${formatBytes(completedBytes)} / ${formatBytes(totalBytes)}`,
+            );
 
             const formData = new FormData();
 
@@ -185,9 +222,36 @@ export default function Show({ guest, folders = [] }) {
                         Accept: 'application/json',
                     },
                     timeout: 0,
+                    onUploadProgress: (progressEvent) => {
+                        const currentFileUploaded = progressEvent.loaded || 0;
+                        const totalUploaded = completedBytes + currentFileUploaded;
+
+                        const percent = totalBytes
+                            ? Math.round((totalUploaded / totalBytes) * 100)
+                            : 0;
+
+                        setUploadProgress({
+                            percent: Math.min(percent, 100),
+                            uploadedBytes: Math.min(totalUploaded, totalBytes),
+                            totalBytes,
+                        });
+
+                        setUploadText(
+                            `Uploading ${i + 1} / ${selectedFiles.length} files... ${formatBytes(totalUploaded)} / ${formatBytes(totalBytes)}`,
+                        );
+                    },
                 });
 
+                completedBytes += Number(file.size || 0);
                 uploadedCount++;
+
+                setUploadProgress({
+                    percent: totalBytes
+                        ? Math.round((completedBytes / totalBytes) * 100)
+                        : 0,
+                    uploadedBytes: Math.min(completedBytes, totalBytes),
+                    totalBytes,
+                });
             } catch (error) {
                 const message = getUploadErrorMessage(error);
 
@@ -202,9 +266,16 @@ export default function Show({ guest, folders = [] }) {
                     firstErrorMessage = message;
                 }
 
+                completedBytes += Number(file.size || 0);
                 failedCount++;
             }
         }
+
+        setUploadProgress({
+            percent: 100,
+            uploadedBytes: totalBytes,
+            totalBytes,
+        });
 
         return {
             uploadedCount,
@@ -251,13 +322,15 @@ export default function Show({ guest, folders = [] }) {
             `Upload complete. Uploaded: ${result.uploadedCount}, Failed: ${result.failedCount}`,
         );
 
-        router.visit(
-            route('company.guests.folders.show', [guest.id, createdFolder.id]),
-            {
-                preserveScroll: true,
-                preserveState: false,
-            },
-        );
+        setTimeout(() => {
+            router.visit(
+                route('company.guests.folders.show', [guest.id, createdFolder.id]),
+                {
+                    preserveScroll: true,
+                    preserveState: false,
+                },
+            );
+        }, 700);
     };
 
     const handleFolderDrop = async (e) => {
@@ -282,7 +355,6 @@ export default function Show({ guest, folders = [] }) {
             setUploadText(`Reading ${folderEntry.name}...`);
 
             const files = await readAllFilesFromDirectory(folderEntry);
-
             const allowedFiles = files.filter(isAllowedFile);
 
             if (!files.length) {
@@ -307,7 +379,7 @@ export default function Show({ guest, folders = [] }) {
         } finally {
             setTimeout(() => {
                 setUploadingFolder(false);
-                setUploadText('');
+                resetUploadProgress();
             }, 1200);
         }
     };
@@ -345,12 +417,14 @@ export default function Show({ guest, folders = [] }) {
 
             setTimeout(() => {
                 setUploadingFolder(false);
-                setUploadText('');
+                resetUploadProgress();
             }, 1200);
         }
     };
 
     const openFolder = (folder) => {
+        if (uploadingFolder) return;
+
         router.visit(route('company.guests.folders.show', [guest.id, folder.id]));
     };
 
@@ -383,7 +457,8 @@ export default function Show({ guest, folders = [] }) {
                         <button
                             type="button"
                             onClick={() => setShowFolderModal(true)}
-                            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-sm font-black text-slate-950 hover:bg-slate-100"
+                            disabled={uploadingFolder}
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-sm font-black text-slate-950 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
                             <FolderPlus size={18} />
                             Create Folder
@@ -431,6 +506,25 @@ export default function Show({ guest, folders = [] }) {
                         <p className="mt-4 text-sm font-black text-blue-700">
                             {uploadText}
                         </p>
+                    )}
+
+                    {uploadingFolder && uploadProgress.totalBytes > 0 && (
+                        <div className="mx-auto mt-5 max-w-xl">
+                            <div className="mb-2 flex items-center justify-between text-xs font-black text-slate-600">
+                                <span>
+                                    {formatBytes(uploadProgress.uploadedBytes)} /{' '}
+                                    {formatBytes(uploadProgress.totalBytes)}
+                                </span>
+                                <span>{uploadProgress.percent}%</span>
+                            </div>
+
+                            <div className="h-4 overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                    className="h-full rounded-full bg-blue-600 transition-all duration-300"
+                                    style={{ width: `${uploadProgress.percent}%` }}
+                                />
+                            </div>
+                        </div>
                     )}
 
                     <label
@@ -497,7 +591,8 @@ export default function Show({ guest, folders = [] }) {
                         <button
                             type="button"
                             onClick={() => setShowFolderModal(true)}
-                            className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800"
+                            disabled={uploadingFolder}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                         >
                             <FolderPlus size={17} />
                             New Folder
@@ -523,7 +618,8 @@ export default function Show({ guest, folders = [] }) {
                                     key={folder.id}
                                     type="button"
                                     onClick={() => openFolder(folder)}
-                                    className="group rounded-[28px] border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:border-blue-300 hover:shadow-xl"
+                                    disabled={uploadingFolder}
+                                    className="group rounded-[28px] border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:border-blue-300 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                     <div className="flex items-start justify-between gap-4">
                                         <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-500 to-violet-600 text-white shadow-lg">
