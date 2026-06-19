@@ -12,6 +12,8 @@ import {
 import { useEffect, useState } from 'react';
 
 export default function Show({ guest, folders = [] }) {
+    const STORAGE_LIMIT_BYTES = 30 * 1024 * 1024 * 1024; // 30GB
+
     const [localFolders, setLocalFolders] = useState(folders || []);
     const [showFolderModal, setShowFolderModal] = useState(false);
     const [folderName, setFolderName] = useState('');
@@ -19,6 +21,7 @@ export default function Show({ guest, folders = [] }) {
     const [draggingFolder, setDraggingFolder] = useState(false);
     const [uploadingFolder, setUploadingFolder] = useState(false);
     const [uploadText, setUploadText] = useState('');
+
     const [uploadProgress, setUploadProgress] = useState({
         percent: 0,
         uploadedBytes: 0,
@@ -44,6 +47,24 @@ export default function Show({ guest, folders = [] }) {
         'webm',
     ];
 
+    const getFolderSize = (folder) => {
+        return Number(
+            folder.total_size ||
+                folder.media_sum_file_size ||
+                folder.media_sum_size ||
+                0,
+        );
+    };
+
+    const totalStorageUsed = localFolders.reduce(
+        (total, folder) => total + getFolderSize(folder),
+        0,
+    );
+
+    const storagePercent = STORAGE_LIMIT_BYTES
+        ? Math.min(Math.round((totalStorageUsed / STORAGE_LIMIT_BYTES) * 100), 100)
+        : 0;
+
     const isAllowedFile = (file) => {
         const name = file?.name || '';
         if (!name || name.startsWith('.')) return false;
@@ -53,9 +74,11 @@ export default function Show({ guest, folders = [] }) {
     };
 
     const formatBytes = (bytes) => {
-        if (!bytes) return '0 MB';
+        const value = Number(bytes || 0);
 
-        const mb = bytes / (1024 * 1024);
+        if (value <= 0) return '0 MB';
+
+        const mb = value / (1024 * 1024);
 
         if (mb >= 1024) {
             return `${(mb / 1024).toFixed(2)} GB`;
@@ -114,7 +137,17 @@ export default function Show({ guest, folders = [] }) {
                     return prev;
                 }
 
-                return [newFolder, ...prev];
+                return [
+                    {
+                        ...newFolder,
+                        media_count: newFolder.media_count || 0,
+                        total_size:
+                            newFolder.total_size ||
+                            newFolder.media_sum_file_size ||
+                            0,
+                    },
+                    ...prev,
+                ];
             });
 
             return newFolder;
@@ -207,7 +240,9 @@ export default function Show({ guest, folders = [] }) {
             const file = selectedFiles[i];
 
             setUploadText(
-                `Uploading ${i + 1} / ${selectedFiles.length} files... ${formatBytes(completedBytes)} / ${formatBytes(totalBytes)}`,
+                `Uploading ${i + 1} / ${selectedFiles.length} files... ${formatBytes(
+                    completedBytes,
+                )} / ${formatBytes(totalBytes)}`,
             );
 
             const formData = new FormData();
@@ -237,7 +272,9 @@ export default function Show({ guest, folders = [] }) {
                         });
 
                         setUploadText(
-                            `Uploading ${i + 1} / ${selectedFiles.length} files... ${formatBytes(totalUploaded)} / ${formatBytes(totalBytes)}`,
+                            `Uploading ${i + 1} / ${selectedFiles.length} files... ${formatBytes(
+                                totalUploaded,
+                            )} / ${formatBytes(totalBytes)}`,
                         );
                     },
                 });
@@ -281,6 +318,7 @@ export default function Show({ guest, folders = [] }) {
             uploadedCount,
             failedCount,
             totalCount: selectedFiles.length,
+            uploadedBytes: totalBytes,
             firstErrorMessage,
         };
     };
@@ -313,6 +351,10 @@ export default function Show({ guest, folders = [] }) {
                           ...folder,
                           media_count:
                               Number(folder.media_count || 0) + result.uploadedCount,
+                          total_size:
+                              getFolderSize(folder) + Number(result.uploadedBytes || 0),
+                          media_sum_file_size:
+                              getFolderSize(folder) + Number(result.uploadedBytes || 0),
                       }
                     : folder,
             ),
@@ -549,7 +591,7 @@ export default function Show({ guest, folders = [] }) {
                     </label>
                 </div>
 
-                <div className="grid gap-6 md:grid-cols-3">
+                <div className="grid gap-6 md:grid-cols-4">
                     <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
                         <p className="text-sm font-bold text-slate-500">Guest</p>
                         <h2 className="mt-3 truncate text-3xl font-black text-slate-950">
@@ -573,6 +615,31 @@ export default function Show({ guest, folders = [] }) {
                                 0,
                             )}
                         </h2>
+                    </div>
+
+                    <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+                        <p className="text-sm font-bold text-slate-500">
+                            Storage Used
+                        </p>
+
+                        <h2 className="mt-3 text-2xl font-black text-slate-950">
+                            {formatBytes(totalStorageUsed)}
+                        </h2>
+
+                        <p className="mt-1 text-xs font-bold text-slate-500">
+                            nga {formatBytes(STORAGE_LIMIT_BYTES)}
+                        </p>
+
+                        <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200">
+                            <div
+                                className="h-full rounded-full bg-blue-600 transition-all duration-300"
+                                style={{ width: `${storagePercent}%` }}
+                            />
+                        </div>
+
+                        <p className="mt-2 text-xs font-black text-blue-700">
+                            {storagePercent}% used
+                        </p>
                     </div>
                 </div>
 
@@ -613,33 +680,41 @@ export default function Show({ guest, folders = [] }) {
                         </div>
                     ) : (
                         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                            {localFolders.map((folder) => (
-                                <button
-                                    key={folder.id}
-                                    type="button"
-                                    onClick={() => openFolder(folder)}
-                                    disabled={uploadingFolder}
-                                    className="group rounded-[28px] border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:border-blue-300 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-500 to-violet-600 text-white shadow-lg">
-                                            <FolderOpen size={30} />
+                            {localFolders.map((folder) => {
+                                const folderSize = getFolderSize(folder);
+
+                                return (
+                                    <button
+                                        key={folder.id}
+                                        type="button"
+                                        onClick={() => openFolder(folder)}
+                                        disabled={uploadingFolder}
+                                        className="group rounded-[28px] border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:border-blue-300 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-500 to-violet-600 text-white shadow-lg">
+                                                <FolderOpen size={30} />
+                                            </div>
+
+                                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                                                {folder.media_count || 0} files
+                                            </span>
                                         </div>
 
-                                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
-                                            {folder.media_count || 0} files
-                                        </span>
-                                    </div>
+                                        <h3 className="mt-5 truncate text-xl font-black text-slate-950">
+                                            {folder.name}
+                                        </h3>
 
-                                    <h3 className="mt-5 truncate text-xl font-black text-slate-950">
-                                        {folder.name}
-                                    </h3>
+                                        <p className="mt-2 text-sm font-black text-blue-700">
+                                            {formatBytes(folderSize)}
+                                        </p>
 
-                                    <p className="mt-2 text-sm font-semibold text-slate-500">
-                                        Open folder
-                                    </p>
-                                </button>
-                            ))}
+                                        <p className="mt-1 text-sm font-semibold text-slate-500">
+                                            Open folder
+                                        </p>
+                                    </button>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
